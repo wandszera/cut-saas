@@ -1,0 +1,38 @@
+[Script Info]
+Title: Styled Subtitles
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.601
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,18,&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,1,2,30,30,25,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:03.38,Default,,0,0,0,,O velha do Senhor\Nnão foi fato sem\Nlá.
+Dialogue: 0,0:00:03.38,0:00:05.54,Default,,0,0,0,,Ahahahah!
+Dialogue: 0,0:00:05.54,0:00:08.76,Default,,0,0,0,,Mas você tem muita\Ngente fazendo essa busca\Nde, como ser católico,
+Dialogue: 0,0:00:08.76,0:00:11.44,Default,,0,0,0,,ou como ser cristão,\Né porque tem o\Nvazio.
+Dialogue: 0,0:00:11.44,0:00:15.08,Default,,0,0,0,,As pessoas estão nunca\Ntantas pessoas, tiveram depressão,
+Dialogue: 0,0:00:15.08,0:00:18.32,Default,,0,0,0,,tiveram crise de ansiedade,\Ntiveram problemas com isso,\Nou seja.
+Dialogue: 0,0:00:18.32,0:00:20.00,Default,,0,0,0,,Tem madora aí, tem\No vazio.
+Dialogue: 0,0:00:20.00,0:00:22.60,Default,,0,0,0,,As pessoas tentam tapar\Nesse vazio com dinheiro,
+Dialogue: 0,0:00:22.60,0:00:26.04,Default,,0,0,0,,com fama, com bebida\Ne com várias coisas.
+Dialogue: 0,0:00:26.04,0:00:28.36,Default,,0,0,0,,E essas pessoas que\Nestão procurando o catônio\Nde cismo de repente
+Dialogue: 0,0:00:28.36,0:00:30.52,Default,,0,0,0,,viram que nessas coisas\Nnão preencheram esse vazio.
+Dialogue: 0,0:00:30.52,0:00:32.48,Default,,0,0,0,,Então queria que vocês\Nfalasse com essas pessoas,
+Dialogue: 0,0:00:32.48,0:00:36.16,Default,,0,0,0,,que ainda não se\Nligaram que talvez esse\Nvazio possa ser preenchido
+Dialogue: 0,0:00:36.16,0:00:38.28,Default,,0,0,0,,com algo espiritual, que\Nnada material vai.
+Dialogue: 0,0:00:38.28,0:00:40.80,Default,,0,0,0,,Que tem muita gente\Nnessa, que fica numa\Nbusca vida inteira
+Dialogue: 0,0:00:40.80,0:00:42.56,Default,,0,0,0,,quando tiver dinheiro, quando\Ntiver uma casa,
+Dialogue: 0,0:00:42.56,0:00:45.28,Default,,0,0,0,,quando tiver meu carro,\Nquando tiver isso aí\Nvocê feliz,
+Dialogue: 0,0:00:45.28,0:00:47.32,Default,,0,0,0,,aí você é completado,\Neu vou ser completo.
+Dialogue: 0,0:00:47.32,0:00:49.52,Default,,0,0,0,,Eu queria que vocês\Nfalasse com essas pessoas\Nque ainda não tão\Nnesse processo
+Dialogue: 0,0:00:49.52,0:00:51.72,Default,,0,0,0,,que chegaram a pesquisar\Nsobre o catoristaismo,
+Dialogue: 0,0:00:51.72,0:00:54.08,Default,,0,0,0,,mas ainda tão naquela\Ndúvida de o que\Nestá faltando na minha\Nvida.
+Dialogue: 0,0:00:54.08,0:00:56.28,Default,,0,0,0,,Porque que eu tenho\Nalgumas coisas que eu\Nsempre quis,
+Dialogue: 0,0:00:56.28,0:00:58.28,Default,,0,0,0,,o que eu estou\Npronto a ter algumas\Ncoisas,

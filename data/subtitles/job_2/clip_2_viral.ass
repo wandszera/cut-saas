@@ -1,0 +1,33 @@
+[Script Info]
+Title: Styled Subtitles
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.601
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,18,&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,1,2,30,30,25,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:04.00,Default,,0,0,0,,Então, a felicidade não\Nestá simplesmente em seguir\Nregras.
+Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,Está na união como\Numa pessoa.
+Dialogue: 0,0:00:06.00,0:00:08.00,Default,,0,0,0,,Não tem porquê a\Nverdade não é uma\Nideia, né?
+Dialogue: 0,0:00:08.00,0:00:09.00,Default,,0,0,0,,A verdade é uma\Npessoa.
+Dialogue: 0,0:00:09.00,0:00:12.00,Default,,0,0,0,,Então, naquele momento ele\Nnão tem essa coragem.
+Dialogue: 0,0:00:12.00,0:00:13.00,Default,,0,0,0,,Ele quer ficar com\Na lei.
+Dialogue: 0,0:00:13.00,0:00:18.00,Default,,0,0,0,,Com a regga, onde\Neu estiver, eu vou\Nobter a minha felicidade\Nseguindo, mano.
+Dialogue: 0,0:00:18.00,0:00:19.00,Default,,0,0,0,,Não.
+Dialogue: 0,0:00:19.00,0:00:21.00,Default,,0,0,0,,Você tem de estar\Nou de Cristo, está?
+Dialogue: 0,0:00:21.00,0:00:23.00,Default,,0,0,0,,Você tem que estar\Nunido a Cristo.
+Dialogue: 0,0:00:23.00,0:00:28.00,Default,,0,0,0,,Só com a lei,\Num livro, um livro\Nna mão por mais\Nsanto que seja, não\Nvai santificar.
+Dialogue: 0,0:00:28.00,0:00:32.00,Default,,0,0,0,,Quem vai santificar é\Na pessoa de Jesus,\No contato com ele.
+Dialogue: 0,0:00:32.00,0:00:35.00,Default,,0,0,0,,Eu percebo aqui, talvez\Neles também vão...
+Dialogue: 0,0:00:35.00,0:00:36.00,Default,,0,0,0,,Minha cabeça de té\Nóbvio, né?
+Dialogue: 0,0:00:36.00,0:00:43.00,Default,,0,0,0,,Toda nossa conversa, ela\Nestá perpaçando por algo\Nque desde a igreja\Nprimitiva sempre foi visto\Ncomo a constituição do\Ncristianismo.
+Dialogue: 0,0:00:43.00,0:00:47.00,Default,,0,0,0,,Para você fazer um\Ncristão, existem etapas, que\Nnão são assim superadas.
+Dialogue: 0,0:00:47.00,0:00:53.00,Default,,0,0,0,,Elas são acumulativas. Você\Nentra em uma, leva\Numa para a segunda,\Nleva uma e a\Nsegunda para a terceira,\Nassim por diante.
+Dialogue: 0,0:00:53.00,0:01:00.00,Default,,0,0,0,,O começo de tudo\Npara você ser cicatórico\Né receber e aderir\Na anúncio, que é\No que a gente\Nchama em grega de\Nquerigma.

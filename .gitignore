@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+data/downloads/*
+data/transcripts/*
+data/clips/*
+data/temp/*
