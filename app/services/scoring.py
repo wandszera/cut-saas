@@ -1,6 +1,6 @@
 def _duration_score(duration: float, mode: str) -> tuple[float, str]:
     if mode == "long":
-        target = 600.0  # 10 min
+        target = 600.0
         min_d = 300.0
         max_d = 900.0
 
@@ -17,7 +17,6 @@ def _duration_score(duration: float, mode: str) -> tuple[float, str]:
             return 3.0, "boa duração"
         return 2.0, "duração aceitável"
 
-    # short
     target = 120.0
     min_d = 30.0
     max_d = 180.0
@@ -76,9 +75,10 @@ def _opening_hook_score(opening_text: str) -> tuple[float, list[str]]:
     return score, reasons
 
 
-def _content_strength_score(full_text: str) -> tuple[float, list[str]]:
+def _content_strength_score(full_text: str) -> tuple[float, float, list[str]]:
     text = full_text.lower()
-    score = 0.0
+    impact_score = 0.0
+    emotion_score = 0.0
     reasons = []
 
     strong_keywords = [
@@ -102,18 +102,18 @@ def _content_strength_score(full_text: str) -> tuple[float, list[str]]:
     found_curiosity = sum(1 for word in curiosity_keywords if word in text)
 
     if found_strong:
-        score += min(found_strong * 0.8, 4.0)
+        impact_score += min(found_strong * 0.8, 4.0)
         reasons.append("conteúdo com impacto")
 
     if found_emotion:
-        score += min(found_emotion * 0.7, 3.0)
+        emotion_score += min(found_emotion * 0.7, 3.0)
         reasons.append("carga emocional")
 
     if found_curiosity:
-        score += min(found_curiosity * 0.7, 2.0)
+        impact_score += min(found_curiosity * 0.7, 2.0)
         reasons.append("curiosidade")
 
-    return score, reasons
+    return impact_score, emotion_score, reasons
 
 
 def _closing_score(closing_text: str) -> tuple[float, list[str]]:
@@ -145,7 +145,7 @@ def _closing_score(closing_text: str) -> tuple[float, list[str]]:
     return score, reasons
 
 
-def _text_volume_score(full_text: str, mode: str) -> tuple[float, list[str]]:
+def _clarity_score(full_text: str, mode: str) -> tuple[float, list[str]]:
     word_count = len(full_text.split())
     score = 0.0
     reasons = []
@@ -180,27 +180,27 @@ def score_candidates(candidates: list[dict], mode: str = "short") -> list[dict]:
         score = 0.0
         reasons = []
 
-        dur_score, dur_reason = _duration_score(duration, mode)
-        score += dur_score
+        duration_fit_score, dur_reason = _duration_score(duration, mode)
+        score += duration_fit_score
         reasons.append(dur_reason)
 
         hook_score, hook_reasons = _opening_hook_score(opening_text)
         score += hook_score
         reasons.extend(hook_reasons)
 
-        content_score, content_reasons = _content_strength_score(text)
-        score += content_score
+        impact_score, emotion_score, content_reasons = _content_strength_score(text)
+        score += impact_score
+        score += emotion_score
         reasons.extend(content_reasons)
 
-        end_score, end_reasons = _closing_score(closing_text)
-        score += end_score
+        closure_score, end_reasons = _closing_score(closing_text)
+        score += closure_score
         reasons.extend(end_reasons)
 
-        volume_score, volume_reasons = _text_volume_score(text, mode)
-        score += volume_score
-        reasons.extend(volume_reasons)
+        clarity_score, clarity_reasons = _clarity_score(text, mode)
+        score += clarity_score
+        reasons.extend(clarity_reasons)
 
-        # penalização de monotonia
         if "?" not in opening_text and score < 4:
             score -= 1.0
             reasons.append("gancho inicial fraco")
@@ -209,6 +209,11 @@ def score_candidates(candidates: list[dict], mode: str = "short") -> list[dict]:
             **candidate,
             "score": round(score, 2),
             "reason": ", ".join(dict.fromkeys(reasons)),
+            "hook_score": round(hook_score, 2),
+            "clarity_score": round(clarity_score, 2),
+            "closure_score": round(closure_score, 2),
+            "emotion_score": round(emotion_score, 2),
+            "duration_fit_score": round(duration_fit_score, 2),
         })
 
     return sorted(scored, key=lambda x: x["score"], reverse=True)

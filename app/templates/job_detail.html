@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job {{ job.id }} - Cut SaaS</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      line-height: 1.6;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #1a1a1a;
+      color: #72e0a6;
+      text-decoration: none;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .back-btn:hover {
+      background: #252525;
+      border-color: #72e0a6;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      color: #fff;
+    }
+
+    .card {
+      background: #1a1a1a;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+      border: 1px solid #2a2a2a;
+    }
+
+    h2 {
+      margin: 0 0 16px 0;
+      font-size: 20px;
+      color: #fff;
+    }
+
+    h3 {
+      margin: 16px 0 12px 0;
+      font-size: 16px;
+      color: #fff;
+    }
+
+    p {
+      margin: 8px 0;
+      color: #ccc;
+    }
+
+    input, select, button {
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    input, select {
+      background: #252525;
+      color: #fff;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #4da3ff;
+      background: #2a2a2a;
+    }
+
+    input::placeholder {
+      color: #666;
+    }
+
+    button {
+      cursor: pointer;
+      background: linear-gradient(135deg, #4da3ff, #72e0a6);
+      color: #000;
+      font-weight: 600;
+      border: none;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(77, 163, 255, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    a {
+      color: #72e0a6;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    a:hover {
+      color: #4da3ff;
+      text-decoration: underline;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .status-pending {
+      background: #3a3a5c;
+      color: #b3d9ff;
+    }
+
+    .status-downloading, .status-extracting_audio, .status-transcribing, 
+    .status-analyzing, .status-rendering {
+      background: #223b5c;
+      color: #b3d9ff;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .status-done {
+      background: #1f5131;
+      color: #d7ffe2;
+    }
+
+    .status-failed {
+      background: #5a2525;
+      color: #ffb3b3;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.8; }
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .meta-item {
+      background: #141414;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #2a2a2a;
+    }
+
+    .meta-item strong {
+      display: block;
+      color: #fff;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .video-preview {
+      margin: 16px 0;
+    }
+
+    .video-preview video {
+      width: 100%;
+      max-width: 720px;
+      border-radius: 10px;
+      background: #000;
+      display: block;
+    }
+
+    .progress-section {
+      background: #141414;
+      padding: 16px;
+      border-radius: 10px;
+      margin: 16px 0;
+      border: 1px solid #2a2a2a;
+    }
+
+    .progress-bar {
+      width: 100%;
+      background: #2a2a2a;
+      border-radius: 10px;
+      overflow: hidden;
+      height: 8px;
+      margin: 12px 0;
+    }
+
+    .progress-fill {
+      height: 8px;
+      background: linear-gradient(90deg, #4da3ff, #72e0a6);
+      transition: width 0.4s ease;
+      border-radius: 10px;
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .error-box {
+      background: #5a2525;
+      border: 1px solid #8a5555;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 12px 0;
+      color: #ffb3b3;
+      font-size: 13px;
+    }
+
+    .form-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin: 12px 0;
+    }
+
+    .form-group > div {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-group label {
+      font-size: 13px;
+      color: #aaa;
+      font-weight: 500;
+    }
+
+    .candidate {
+      background: #141414;
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      border: 1px solid #2a2a2a;
+      transition: all 0.2s ease;
+    }
+
+    .candidate:hover {
+      border-color: #3a3a3a;
+      background: #1a1a1a;
+    }
+
+    .candidate-header {
+      margin-bottom: 12px;
+    }
+
+    .candidate-number {
+      font-weight: 600;
+      color: #72e0a6;
+      font-size: 14px;
+    }
+
+    .candidate-info {
+      font-size: 12px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      background: #2a2a2a;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    .badge-score-strong {
+      background: #1f5131;
+      color: #d7ffe2;
+    }
+
+    .badge-score-medium {
+      background: #5a4a1c;
+      color: #fff1c2;
+    }
+
+    .badge-score-weak {
+      background: #5a2525;
+      color: #ffd6d6;
+    }
+
+    .section-label {
+      font-size: 11px;
+      color: #72e0a6;
+      margin-top: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+
+    .snippet {
+      background: #0a0a0a;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #ccc;
+      border-left: 3px solid #4da3ff;
+    }
+
+    .candidate-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .candidate-actions form {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .candidate-actions button, .candidate-actions a {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    .quick-adjust {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .quick-adjust button {
+      padding: 8px 12px;
+      font-size: 12px;
+      background: #252525;
+      color: #e0e0e0;
+      border: 1px solid #3a3a3a;
+      flex: 1;
+      min-width: 100px;
+    }
+
+    .quick-adjust button:hover {
+      background: #333;
+      border-color: #72e0a6;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .clip {
+      background: #141414;
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      border: 1px solid #2a2a2a;
+      transition: all 0.2s ease;
+    }
+
+    .clip:hover {
+      border-color: #3a3a3a;
+      background: #1a1a1a;
+    }
+
+    .clip video {
+      width: 100%;
+      max-width: 420px;
+      border-radius: 10px;
+      background: #000;
+      display: block;
+      margin-top: 10px;
+    }
+
+    .clip-info {
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 30px;
+      color: #666;
+      background: #141414;
+      border-radius: 10px;
+      border: 1px solid #2a2a2a;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 16px;
+      }
+
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      h1 {
+        font-size: 22px;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .form-group {
+        flex-direction: column;
+      }
+
+      .form-group > div {
+        width: 100%;
+      }
+
+      .form-group input, .form-group select, .form-group button {
+        width: 100%;
+      }
+
+      .quick-adjust {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .candidate-actions {
+        flex-direction: column;
+      }
+
+      .candidate-actions form {
+        width: 100%;
+        flex-direction: column;
+      }
+
+      .candidate-actions form button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <a href="/" class="back-btn">← Voltar</a>
+    <h1>Job #{{ job.id }}</h1>
+  </div>
+
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
+      <div>
+        <p><strong>📝 Título:</strong> {{ job.title or "Sem título" }}</p>
+        <p><strong>📺 Fonte:</strong> {{ job.source_value }}</p>
+      </div>
+      <div style="text-align: right;">
+        <p style="margin: 0;"><strong>Status:</strong></p>
+        {% if job.status == "done" %}
+          <span class="status-badge status-done">✓ Concluído</span>
+        {% elif job.status == "failed" %}
+          <span class="status-badge status-failed">✗ Erro</span>
+        {% elif job.status == "pending" %}
+          <span class="status-badge status-pending">⏱️ Na fila</span>
+        {% elif job.status == "downloading" %}
+          <span class="status-badge status-downloading">⬇️ Baixando...</span>
+        {% elif job.status == "extracting_audio" %}
+          <span class="status-badge status-extracting_audio">🔊 Extraindo áudio...</span>
+        {% elif job.status == "transcribing" %}
+          <span class="status-badge status-transcribing">✍️ Transcrevendo...</span>
+        {% elif job.status == "analyzing" %}
+          <span class="status-badge status-analyzing">🔍 Analisando...</span>
+        {% elif job.status == "rendering" %}
+          <span class="status-badge status-rendering">🎬 Renderizando...</span>
+        {% else %}
+          <span class="status-badge">{{ job.status }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if job.error_message %}
+    <div class="error-box">
+      ⚠️ <strong>Erro:</strong> {{ job.error_message }}
+    </div>
+    {% endif %}
+
+    <div class="meta-grid">
+      {% if video_url %}
+      <div class="meta-item">
+        <strong>🎥 Vídeo original</strong>
+        <a href="{{ video_url }}" target="_blank">Abrir arquivo</a>
+      </div>
+      {% endif %}
+
+      {% if audio_url %}
+      <div class="meta-item">
+        <strong>🔊 Áudio extraído</strong>
+        <a href="{{ audio_url }}" target="_blank">Abrir arquivo</a>
+      </div>
+      {% endif %}
+
+      {% if transcript_url %}
+      <div class="meta-item">
+        <strong>📄 Transcrição</strong>
+        <a href="{{ transcript_url }}" target="_blank">Abrir arquivo</a>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if video_url %}
+    <div class="video-preview" id="original-video-card">
+      <h3>▶ Preview do vídeo original</h3>
+      <video id="original-video-player" controls preload="metadata">
+        <source src="{{ video_url }}" type="video/mp4">
+        Seu navegador não suporta vídeo.
+      </video>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if job.status != "done" and job.status != "failed" %}
+  <div class="card">
+    <h2>⏳ Processando...</h2>
+
+    {% set status_map = {
+    "pending": {"label": "Na fila", "progress": 5},
+    "downloading": {"label": "Baixando vídeo", "progress": 20},
+    "extracting_audio": {"label": "Extraindo áudio", "progress": 40},
+    "transcribing": {"label": "Transcrevendo", "progress": 70},
+    "analyzing": {"label": "Analisando candidatos", "progress": 85},
+    "rendering": {"label": "Renderizando", "progress": 95}
+    } %}
+
+    {% set current = status_map.get(job.status, {"label": job.status, "progress": 10}) %}
+
+    <div class="progress-section">
+      <div class="progress-label">
+        <span><strong>{{ current.label }}</strong></span>
+        <span>{{ current.progress }}%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {{ current.progress }}%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    setTimeout(() => {
+      window.location.reload();
+    }, 3000);
+  </script>
+  {% endif %}
+
+  {% if job.status == "failed" %}
+  <div class="card">
+    <h2>❌ Falha no processamento</h2>
+    {% if job.error_message %}
+    <div class="error-box">
+      {{ job.error_message }}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if job.status == "done" and job.transcript_path %}
+  <div class="card">
+    <h2>🔍 Análise</h2>
+    <form method="get" action="/jobs/{{ job.id }}/view" class="form-group">
+      <div>
+        <label><strong>Formato</strong></label>
+        <select name="mode">
+          <option value="short" {% if mode=="short" %}selected{% endif %}>📱 Short (vertical 9:16)</option>
+          <option value="long" {% if mode=="long" %}selected{% endif %}>📺 Long (horizontal 16:9)</option>
+        </select>
+      </div>
+      <div>
+        <button type="submit">🔄 Atualizar análise</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card" id="manual-render-card">
+    <h2>✂️ Render manual</h2>
+    <p style="color: #888; font-size: 13px;">Preencha os tempos manualmente ou clique em um dos botões dos candidatos abaixo.</p>
+
+    <form method="post" action="/jobs/{{ job.id }}/view/render-manual" class="form-group">
+      <div>
+        <label for="start"><strong>Início (segundos)</strong></label>
+        <input type="number" step="0.1" min="0" name="start" id="start" required>
+      </div>
+
+      <div>
+        <label for="end"><strong>Fim (segundos)</strong></label>
+        <input type="number" step="0.1" min="0" name="end" id="end" required>
+      </div>
+
+      <div>
+        <label for="manual_mode"><strong>Formato</strong></label>
+        <select name="mode" id="manual_mode">
+          <option value="short" {% if mode=="short" %}selected{% endif %}>📱 Short (9:16)</option>
+          <option value="long" {% if mode=="long" %}selected{% endif %}>📺 Long (16:9)</option>
+        </select>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" name="burn_subtitles" value="true" id="manual_subtitles">
+        <label for="manual_subtitles" style="margin: 0;">Legenda embutida</label>
+      </div>
+
+      <div>
+        <button type="submit">🎬 Renderizar</button>
+      </div>
+    </form>
+
+    <div class="quick-adjust">
+      <button type="button" onclick="adjustStart(-5)">-5s início</button>
+      <button type="button" onclick="adjustStart(5)">+5s início</button>
+      <button type="button" onclick="adjustEnd(-5)">-5s fim</button>
+      <button type="button" onclick="adjustEnd(5)">+5s fim</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🎬 Candidatos</h2>
+    {% if candidates %}
+      {% for candidate in candidates %}
+      <div class="candidate">
+        <div class="candidate-header">
+          <div class="candidate-number">#{{ loop.index0 }} — {{ candidate.time_range_label }}</div>
+          <div class="candidate-info">⏱️ Duração: {{ candidate.duration_mmss }}</div>
+        </div>
+
+        <div class="badge-row">
+          <span class="badge">{{ candidate.format_label }}</span>
+
+          {% if candidate.score >= 7 %}
+          <span class="badge badge-score-strong">⭐ {{ candidate.score }} — {{ candidate.score_label }}</span>
+          {% elif candidate.score >= 4 %}
+          <span class="badge badge-score-medium">⚡ {{ candidate.score }} — {{ candidate.score_label }}</span>
+          {% else %}
+          <span class="badge badge-score-weak">💧 {{ candidate.score }} — {{ candidate.score_label }}</span>
+          {% endif %}
+
+          <span class="badge">{{ candidate.reason }}</span>
+        </div>
+
+        <div class="section-label">📌 Gancho inicial</div>
+        <div class="snippet">
+          {{ candidate.opening_preview }}
+        </div>
+
+        {% if candidate.closing_preview %}
+        <div class="section-label">🎯 Fechamento</div>
+        <div class="snippet">
+          {{ candidate.closing_preview }}
+        </div>
+        {% endif %}
+
+        <div class="section-label">📋 Prévia do texto</div>
+        <div class="snippet">
+          {{ candidate.text[:400] }}{% if candidate.text|length > 400 %}...{% endif %}
+        </div>
+
+        <div class="candidate-actions">
+          <form method="post" action="/jobs/{{ job.id }}/view/render-candidate">
+            <input type="hidden" name="candidate_index" value="{{ loop.index0 }}">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" name="burn_subtitles" value="true" id="cb{{ loop.index0 }}">
+              <label for="cb{{ loop.index0 }}" style="margin: 0; font-size: 12px;">Legenda</label>
+            </div>
+            <button type="submit">🎬 Renderizar</button>
+          </form>
+
+          <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end }}, '{{ mode }}')">
+            📝 Usar no manual
+          </button>
+
+          <button type="button" onclick="previewCandidateInOriginal({{ candidate.start }}, {{ candidate.end }})">
+            👁️ Ver no original
+          </button>
+
+          <button type="button" onclick="fillManualForm({{ candidate.start - 5 if candidate.start - 5 > 0 else 0 }}, {{ candidate.end }}, '{{ mode }}')">
+            ◀ -5s início
+          </button>
+
+          <button type="button" onclick="fillManualForm({{ candidate.start + 5 }}, {{ candidate.end }}, '{{ mode }}')">
+            ▶ +5s início
+          </button>
+
+          <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end - 5 if candidate.end - 5 > candidate.start else candidate.end }}, '{{ mode }}')">
+            ◀ -5s fim
+          </button>
+
+          <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end + 5 }}, '{{ mode }}')">
+            ▶ +5s fim
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        📭 Nenhum candidato disponível ainda.
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>🎞️ Clips gerados</h2>
+    {% if clips %}
+      {% for clip in clips %}
+      <div class="clip">
+        <p style="margin: 0 0 8px 0;">
+          <strong>Clip #{{ clip.id }}</strong>
+          <span style="color: #888; font-size: 12px;">
+            — {{ clip.mode }} / {{ clip.format_label }}
+            — {{ clip.start_mmss }} até {{ clip.end_mmss }}
+            — ⏱️ {{ clip.duration_mmss }}
+          </span>
+        </p>
+
+        <div class="clip-info">
+          📌 {{ clip.source }}
+          {% if clip.score is not none %}| ⭐ {{ clip.score }}{% endif %}
+          | 📝 {% if clip.subtitles_burned %}sim{% else %}não{% endif %}
+        </div>
+
+        <p style="margin: 8px 0;">
+          <a href="{{ build_static_url(clip.output_path) }}" target="_blank">🎬 Abrir clip</a>
+        </p>
+
+        {% if build_static_url(clip.output_path) %}
+        <video controls preload="metadata">
+          <source src="{{ build_static_url(clip.output_path) }}" type="video/mp4">
+          Seu navegador não suporta vídeo.
+        </video>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        🎬 Nenhum clip renderizado ainda.
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <script>
+    function fillManualForm(start, end, mode) {
+      const startInput = document.getElementById("start");
+      const endInput = document.getElementById("end");
+      const modeSelect = document.getElementById("manual_mode");
+      const card = document.getElementById("manual-render-card");
+
+      startInput.value = Number(start).toFixed(1);
+      endInput.value = Number(end).toFixed(1);
+      modeSelect.value = mode;
+
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function adjustStart(delta) {
+      const startInput = document.getElementById("start");
+      const endInput = document.getElementById("end");
+
+      let start = parseFloat(startInput.value || "0");
+      let end = parseFloat(endInput.value || "0");
+
+      start = Math.max(0, start + delta);
+
+      if (end > 0 && start >= end) {
+        start = Math.max(0, end - 0.1);
+      }
+
+      startInput.value = start.toFixed(1);
+    }
+
+    function adjustEnd(delta) {
+      const startInput = document.getElementById("start");
+      const endInput = document.getElementById("end");
+
+      let start = parseFloat(startInput.value || "0");
+      let end = parseFloat(endInput.value || "0");
+
+      end = Math.max(0, end + delta);
+
+      if (end <= start) {
+        end = start + 0.1;
+      }
+
+      endInput.value = end.toFixed(1);
+    }
+
+    function previewCandidateInOriginal(start, end) {
+      const player = document.getElementById("original-video-player");
+      const card = document.getElementById("original-video-card");
+
+      if (!player) return;
+
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      const goToTime = () => {
+        try {
+          player.currentTime = Math.max(0, Number(start));
+          player.play();
+        } catch (e) {
+          console.error("Não foi possível iniciar preview:", e);
+        }
+      };
+
+      if (player.readyState >= 1) {
+        goToTime();
+      } else {
+        player.addEventListener("loadedmetadata", goToTime, { once: true });
+        player.load();
+      }
+    }
+  </script>
+</body>
+
+</html>

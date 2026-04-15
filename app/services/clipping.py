@@ -14,26 +14,41 @@ def _escape_subtitles_path_for_ffmpeg(path: str) -> str:
     return p
 
 
-def _build_video_filter(mode: str, subtitles_path: str | None = None) -> str:
-    filters = []
+def _build_short_filter(subtitles_path: str | None = None) -> str:
+    """
+    Short vertical com fundo blur + vídeo principal centralizado.
+    """
+    filter_parts = [
+        # fundo vertical desfocado
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        "boxblur=20:2[bg]",
 
-    mode = mode.lower().strip()
+        # vídeo principal cabendo inteiro dentro do vertical
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg]",
 
-    if mode == "short":
-        # transforma para vertical 9:16
-        # crop central + escala
-        filters.append("scale=1080:1920:force_original_aspect_ratio=increase")
-        filters.append("crop=1080:1920")
-    else:
-        # garante saída horizontal padrão
-        filters.append("scale=1920:1080:force_original_aspect_ratio=decrease")
-        filters.append("pad=1920:1080:(ow-iw)/2:(oh-ih)/2")
+        # centraliza foreground sobre background
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+    ]
 
     if subtitles_path:
         escaped_sub_path = _escape_subtitles_path_for_ffmpeg(subtitles_path)
-        filters.append(f"subtitles='{escaped_sub_path}'")
+        filter_parts[-1] += f",subtitles='{escaped_sub_path}'"
 
-    return ",".join(filters)
+    return ";".join(filter_parts)
+
+
+def _build_long_filter(subtitles_path: str | None = None) -> str:
+    """
+    Long horizontal padrão.
+    """
+    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+
+    if subtitles_path:
+        escaped_sub_path = _escape_subtitles_path_for_ffmpeg(subtitles_path)
+        vf += f",subtitles='{escaped_sub_path}'"
+
+    return vf
 
 
 def render_clip(
@@ -60,18 +75,31 @@ def render_clip(
     output_path = clips_dir / f"clip_{clip_index + 1}{suffix}.mp4"
     duration = round(end - start, 2)
 
-    vf = _build_video_filter(
-        mode=mode,
-        subtitles_path=subtitles_path if burn_subtitles else None,
-    )
-
     command = [
         "ffmpeg",
         "-y",
         "-ss", str(start),
         "-i", str(video_file),
         "-t", str(duration),
-        "-vf", vf,
+    ]
+
+    if mode == "short":
+        filter_complex = _build_short_filter(
+            subtitles_path=subtitles_path if burn_subtitles else None
+        )
+        command += [
+            "-filter_complex", filter_complex,
+            "-map", "0:a?"
+        ]
+    else:
+        vf = _build_long_filter(
+            subtitles_path=subtitles_path if burn_subtitles else None
+        )
+        command += [
+            "-vf", vf
+        ]
+
+    command += [
         "-c:v", "libx264",
         "-c:a", "aac",
         "-movflags", "+faststart",

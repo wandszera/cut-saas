@@ -22,3 +22,31 @@ class Job(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    @property
+    def status_label(self):
+        labels = {
+            "pending": "Na fila",
+            "downloading": "Baixando...",
+            "extracting_audio": "Extraindo áudio...",
+            "transcribing": "Transcrevendo...",
+            "analyzing": "Analisando...",
+            "rendering": "Renderizando...",
+            "done": "Concluído",
+            "failed": "Erro"
+        }
+        return labels.get(self.status, self.status)
+
+    @property
+    def progress(self):
+        progress_map = {
+            "pending": 5,
+            "downloading": 20,
+            "extracting_audio": 40,
+            "transcribing": 70,
+            "analyzing": 85,
+            "rendering": 95,
+            "done": 100,
+            "failed": 0
+        }
+        return progress_map.get(self.status, 0)

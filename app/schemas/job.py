@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional
 from datetime import datetime
 
@@ -8,12 +8,25 @@ class JobCreateYouTube(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    mode: str = "short"   # short | long
+    mode: str = "short"
     top_n: int = 10
 
 
 class RenderRequest(BaseModel):
     top_n: int = 5
+    burn_subtitles: bool = False
+    mode: str = "short"
+
+
+class RenderCandidateRequest(BaseModel):
+    candidate_index: int = Field(..., ge=0)
+    burn_subtitles: bool = False
+    mode: str = "short"
+
+
+class ManualRenderRequest(BaseModel):
+    start: float = Field(..., ge=0)
+    end: float = Field(..., gt=0)
     burn_subtitles: bool = False
     mode: str = "short"
 
