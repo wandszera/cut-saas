@@ -9,7 +9,8 @@ from app.web.routes_pages import router as pages_router
 from app.models.job import Job
 from app.models.clip import Clip
 from app.models.candidate import Candidate
-
+from app.models.niche_keyword import NicheKeyword
+from app.models.job_step import JobStep
 from app.utils.file_manager import ensure_directories
 
 Base.metadata.create_all(bind=engine)

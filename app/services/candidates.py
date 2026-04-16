@@ -2,12 +2,11 @@ from sqlalchemy.orm import Session
 
 from app.models.candidate import Candidate
 from app.models.job import Job
+from app.services.niche_learning import get_feedback_profile_for_niche, get_learned_keywords_for_niche
 from app.services.segmentation import load_segments, build_candidate_windows
 from app.services.scoring import score_candidates
 
-
 def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Candidate]:
-    # apaga candidatos antigos desse modo
     (
         db.query(Candidate)
         .filter(Candidate.job_id == job.id, Candidate.mode == mode)
@@ -17,7 +16,17 @@ def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Cand
 
     raw_segments = load_segments(job.transcript_path)
     candidates = build_candidate_windows(raw_segments, mode=mode)
-    ranked = score_candidates(candidates, mode=mode)
+
+    niche = job.detected_niche or "geral"
+    learned_keywords = get_learned_keywords_for_niche(db, niche)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
+    ranked = score_candidates(
+        candidates,
+        mode=mode,
+        niche=niche,
+        learned_keywords=learned_keywords,
+        feedback_profile=feedback_profile,
+    )
 
     created = []
     for item in ranked:

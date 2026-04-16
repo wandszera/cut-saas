@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     ytdlp_cookies_browser_profile: str | None = None
     ytdlp_verbose: bool = True
     whisper_model: str = "base"
-    
+    node_bin: str = "node"
+    node_extra_path: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,0 +1,206 @@
+import re
+from collections import Counter, defaultdict
+
+from sqlalchemy.orm import Session
+
+from app.models.candidate import Candidate
+from app.models.job import Job
+from app.models.niche_keyword import NicheKeyword
+
+
+STOPWORDS = {
+    "a", "o", "e", "de", "do", "da", "dos", "das", "em", "um", "uma",
+    "para", "por", "com", "sem", "que", "não", "nao", "no", "na", "os",
+    "as", "é", "ser", "foi", "era", "vai", "vou", "tem", "tá", "ta",
+    "né", "ne", "isso", "essa", "esse", "assim", "então", "entao",
+    "porque", "porquê", "por que", "como", "qual", "quais", "quando",
+    "onde", "ele", "ela", "eles", "elas", "você", "voce", "vocês",
+    "também", "tambem", "muito", "mais", "menos", "já", "ja", "eu",
+    "tu", "me", "te", "se", "ao", "à", "às", "ou", "mas", "só", "so",
+    "gente", "cara", "mano", "tipo"
+}
+
+
+def _tokenize(text: str) -> list[str]:
+    text = (text or "").lower()
+    words = re.findall(r"\b[a-zA-ZÀ-ÿ0-9_-]{4,}\b", text)
+    return [
+        w for w in words
+        if w not in STOPWORDS
+        and not w.isdigit()
+    ]
+
+
+def learn_keywords_for_niche(
+    db: Session,
+    niche: str,
+    min_candidate_score: float = 8.0,
+    min_occurrences: int = 3,
+    min_distinct_jobs: int = 2,
+):
+    if niche == "geral":
+        return []
+
+    candidates = (
+        db.query(Candidate)
+        .filter(
+            Candidate.score >= min_candidate_score
+        )
+        .all()
+    )
+
+    niche_candidates = [c for c in candidates if c.reason and c.full_text and niche]
+
+    keyword_counts = Counter()
+    keyword_jobs = defaultdict(set)
+
+    for candidate in niche_candidates:
+        tokens = set(_tokenize(candidate.full_text))
+        for token in tokens:
+            keyword_counts[token] += 1
+            keyword_jobs[token].add(candidate.job_id)
+
+    learned = []
+
+    for keyword, occurrences in keyword_counts.items():
+        distinct_jobs = len(keyword_jobs[keyword])
+
+        if occurrences < min_occurrences:
+            continue
+
+        if distinct_jobs < min_distinct_jobs:
+            continue
+
+        score = round(occurrences * 1.0 + distinct_jobs * 1.5, 2)
+
+        existing = (
+            db.query(NicheKeyword)
+            .filter(
+                NicheKeyword.niche == niche,
+                NicheKeyword.keyword == keyword,
+            )
+            .first()
+        )
+
+        if existing:
+            existing.score = score
+            existing.occurrences = occurrences
+            existing.distinct_jobs = distinct_jobs
+            existing.status = "active"
+            learned.append(existing)
+        else:
+            nk = NicheKeyword(
+                niche=niche,
+                keyword=keyword,
+                score=score,
+                occurrences=occurrences,
+                distinct_jobs=distinct_jobs,
+                source="learned",
+                status="active",
+            )
+            db.add(nk)
+            learned.append(nk)
+
+    db.commit()
+    return learned
+
+
+def get_learned_keywords_for_niche(db: Session, niche: str) -> list[str]:
+    rows = (
+        db.query(NicheKeyword)
+        .filter(
+            NicheKeyword.niche == niche,
+            NicheKeyword.status == "active",
+        )
+        .order_by(NicheKeyword.score.desc())
+        .all()
+    )
+    return [row.keyword for row in rows]
+
+
+def _avg(values: list[float]) -> float:
+    return round(sum(values) / len(values), 4) if values else 0.0
+
+
+def _collect_candidate_metrics(candidate: Candidate) -> dict[str, float]:
+    return {
+        "hook_score": float(candidate.hook_score or 0.0),
+        "clarity_score": float(candidate.clarity_score or 0.0),
+        "closure_score": float(candidate.closure_score or 0.0),
+        "emotion_score": float(candidate.emotion_score or 0.0),
+        "duration_fit_score": float(candidate.duration_fit_score or 0.0),
+        "duration": float(candidate.duration or 0.0),
+    }
+
+
+def get_feedback_profile_for_niche(
+    db: Session,
+    niche: str,
+    mode: str,
+    *,
+    min_samples: int = 2,
+) -> dict:
+    niche = (niche or "geral").lower().strip()
+    mode = (mode or "short").lower().strip()
+
+    rows = (
+        db.query(Candidate, Job)
+        .join(Job, Candidate.job_id == Job.id)
+        .filter(
+            Candidate.mode == mode,
+            Candidate.status.in_(("approved", "rejected", "rendered")),
+        )
+        .all()
+    )
+
+    niche_rows = [
+        (candidate, job)
+        for candidate, job in rows
+        if (job.detected_niche or "geral").lower().strip() == niche
+    ]
+
+    positive_statuses = {"approved", "rendered"}
+    positive_candidates = [candidate for candidate, _job in niche_rows if candidate.status in positive_statuses]
+    negative_candidates = [candidate for candidate, _job in niche_rows if candidate.status == "rejected"]
+
+    metrics = [
+        "hook_score",
+        "clarity_score",
+        "closure_score",
+        "emotion_score",
+        "duration_fit_score",
+        "duration",
+    ]
+
+    profile = {
+        "niche": niche,
+        "mode": mode,
+        "positive_count": len(positive_candidates),
+        "negative_count": len(negative_candidates),
+        "sample_count": len(niche_rows),
+        "min_samples_reached": len(positive_candidates) >= min_samples,
+        "positive_means": {},
+        "negative_means": {},
+        "successful_keywords": [],
+    }
+
+    if not profile["min_samples_reached"]:
+        return profile
+
+    for metric in metrics:
+        profile["positive_means"][metric] = _avg(
+            [_collect_candidate_metrics(candidate)[metric] for candidate in positive_candidates]
+        )
+        profile["negative_means"][metric] = _avg(
+            [_collect_candidate_metrics(candidate)[metric] for candidate in negative_candidates]
+        )
+
+    token_counter = Counter()
+    for candidate in positive_candidates:
+        token_counter.update(set(_tokenize(candidate.full_text or "")))
+
+    profile["successful_keywords"] = [
+        keyword
+        for keyword, _count in token_counter.most_common(12)
+    ]
+    return profile

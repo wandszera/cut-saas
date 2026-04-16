@@ -2,8 +2,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import whisper
-
 from app.core.config import settings
 
 
@@ -30,6 +28,8 @@ def transcribe_audio(audio_path: str, job_id: int) -> str:
     output_path = transcripts_dir / f"job_{job_id}.json"
 
     try:
+        import whisper
+
         model = whisper.load_model(settings.whisper_model)
 
         result = model.transcribe(

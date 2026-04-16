@@ -321,6 +321,16 @@
       color: #ffd6d6;
     }
 
+    .badge-feedback-good {
+      background: #173d2d;
+      color: #ccffe9;
+    }
+
+    .badge-feedback-warn {
+      background: #4c3314;
+      color: #ffe7bf;
+    }
+
     .section-label {
       font-size: 11px;
       color: #72e0a6;
@@ -412,6 +422,85 @@
       font-size: 12px;
       color: #888;
       margin-top: 8px;
+    }
+
+    .step-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .step-item {
+      background: #141414;
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid #2a2a2a;
+    }
+
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .step-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      text-transform: capitalize;
+    }
+
+    .step-meta {
+      font-size: 12px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .step-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .step-actions form {
+      display: inline-flex;
+    }
+
+    .step-actions button {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
+    .step-details {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #aaa;
+      word-break: break-word;
+    }
+
+    .step-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .step-summary .badge {
+      background: #202830;
+      color: #d5e8ff;
+    }
+
+    .step-timeline {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 12px;
+    }
+
+    .step-timeline .meta-item {
+      margin: 0;
     }
 
     .empty-state {
@@ -517,71 +606,40 @@
     {% endif %}
 
     <div class="meta-grid">
-      {% if video_url %}
+      {% if job.video_path %}
       <div class="meta-item">
         <strong>🎥 Vídeo original</strong>
-        <a href="{{ video_url }}" target="_blank">Abrir arquivo</a>
+        <a href="{{ build_static_url(job.video_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
 
-      {% if audio_url %}
+      {% if job.audio_path %}
       <div class="meta-item">
         <strong>🔊 Áudio extraído</strong>
-        <a href="{{ audio_url }}" target="_blank">Abrir arquivo</a>
+        <a href="{{ build_static_url(job.audio_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
 
-      {% if transcript_url %}
+      {% if job.transcript_path %}
       <div class="meta-item">
         <strong>📄 Transcrição</strong>
-        <a href="{{ transcript_url }}" target="_blank">Abrir arquivo</a>
+        <a href="{{ build_static_url(job.transcript_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
     </div>
 
-    {% if video_url %}
+    {% if job.video_path %}
     <div class="video-preview" id="original-video-card">
       <h3>▶ Preview do vídeo original</h3>
       <video id="original-video-player" controls preload="metadata">
-        <source src="{{ video_url }}" type="video/mp4">
+        <source src="{{ build_static_url(job.video_path) }}" type="video/mp4">
         Seu navegador não suporta vídeo.
       </video>
     </div>
     {% endif %}
   </div>
 
-  {% if job.status != "done" and job.status != "failed" %}
-  <div class="card">
-    <h2>⏳ Processando...</h2>
 
-    {% set status_map = {
-    "pending": {"label": "Na fila", "progress": 5},
-    "downloading": {"label": "Baixando vídeo", "progress": 20},
-    "extracting_audio": {"label": "Extraindo áudio", "progress": 40},
-    "transcribing": {"label": "Transcrevendo", "progress": 70},
-    "analyzing": {"label": "Analisando candidatos", "progress": 85},
-    "rendering": {"label": "Renderizando", "progress": 95}
-    } %}
-
-    {% set current = status_map.get(job.status, {"label": job.status, "progress": 10}) %}
-
-    <div class="progress-section">
-      <div class="progress-label">
-        <span><strong>{{ current.label }}</strong></span>
-        <span>{{ current.progress }}%</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: {{ current.progress }}%;"></div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    setTimeout(() => {
-      window.location.reload();
-    }, 3000);
-  </script>
-  {% endif %}
 
   {% if job.status == "failed" %}
   <div class="card">
@@ -594,7 +652,164 @@
   </div>
   {% endif %}
 
+  <div class="card">
+    <h2>Pipeline</h2>
+    {% if steps %}
+    <div class="step-list">
+      {% for step in steps %}
+      <div class="step-item">
+        <div class="step-header">
+          <div>
+            <div class="step-name">{{ step.step_name }}</div>
+            <div class="step-meta">
+              {{ step.status_label }} | tentativas {{ step.attempts }}/{{ step.max_attempts }}
+            </div>
+          </div>
+          <div>
+            {% if step.status == "completed" %}
+            <span class="status-badge status-done">Concluida</span>
+            {% elif step.status == "skipped" %}
+            <span class="status-badge status-pending">Pulada</span>
+            {% elif step.status == "running" %}
+            <span class="status-badge status-analyzing">Executando</span>
+            {% elif step.status == "failed" %}
+            <span class="status-badge status-failed">Falhou</span>
+            {% elif step.status == "exhausted" %}
+            <span class="status-badge status-failed">Esgotada</span>
+            {% else %}
+            <span class="status-badge status-pending">Pendente</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if step.error_message %}
+        <div class="error-box">
+          <strong>Erro:</strong> {{ step.error_message }}
+        </div>
+        {% endif %}
+
+        {% if step.summary_items %}
+        <div class="step-summary">
+          {% for item in step.summary_items %}
+          <span class="badge">{{ item }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if step.started_at or step.completed_at or step.duration_label %}
+        <div class="step-timeline">
+          {% if step.started_at %}
+          <div class="meta-item">
+            <strong>Inicio</strong>
+            <span>{{ step.started_at }}</span>
+          </div>
+          {% endif %}
+          {% if step.completed_at %}
+          <div class="meta-item">
+            <strong>Fim</strong>
+            <span>{{ step.completed_at }}</span>
+          </div>
+          {% endif %}
+          {% if step.duration_label %}
+          <div class="meta-item">
+            <strong>Duração</strong>
+            <span>{{ step.duration_label }}</span>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if step.detail_items %}
+        <div class="step-details">
+          <strong>Contexto da etapa:</strong>
+          {% for item in step.detail_items %}
+          <p style="margin: 6px 0 0 0;">
+            <strong>{{ item.label }}:</strong> {{ item.value }}
+          </p>
+          {% endfor %}
+        </div>
+        {% elif step.details %}
+        <div class="step-details">
+          <strong>Detalhes brutos:</strong> <code>{{ step.details }}</code>
+        </div>
+        {% endif %}
+
+        <div class="step-actions">
+          {% if step.can_retry %}
+          <form method="post" action="/jobs/{{ job.id }}/view/steps/{{ step.step_name }}/retry">
+            <button type="submit">Reprocessar etapa</button>
+          </form>
+          {% endif %}
+
+          {% if step.can_force_retry %}
+          <form method="post" action="/jobs/{{ job.id }}/view/steps/{{ step.step_name }}/retry">
+            <input type="hidden" name="force" value="true">
+            <button type="submit">Forcar retry</button>
+          </form>
+          {% endif %}
+
+          {% if step.can_reset %}
+          <form method="post" action="/jobs/{{ job.id }}/view/steps/{{ step.step_name }}/reset">
+            <button type="submit">Resetar etapa</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      Nenhuma etapa registrada ainda.
+    </div>
+    {% endif %}
+  </div>
+
+  {% if job.status == "failed" or job.status == "pending" %}
+  <div class="card">
+    <h2>Recuperacao</h2>
+    <div class="step-actions">
+      <form method="post" action="/jobs/{{ job.id }}/view/retry">
+        <button type="submit">Reprocessar job</button>
+      </form>
+      <form method="post" action="/jobs/{{ job.id }}/view/retry">
+        <input type="hidden" name="force" value="true">
+        <button type="submit">Forcar reprocessamento</button>
+      </form>
+    </div>
+    <div class="step-actions">
+      <form method="post" action="/jobs/{{ job.id }}/view/feedback/recalibrate">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <button type="submit">Recalibrar aprendizado</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   {% if job.status == "done" and job.transcript_path %}
+  {% if feedback_profile %}
+  <div class="card">
+    <h2>Aprendizado</h2>
+    {% if feedback_profile.is_ready %}
+    <div class="meta-grid">
+      <div class="meta-item">
+        <strong>Base de feedback</strong>
+        <span>{{ feedback_profile.sample_count }} sinais ({{ feedback_profile.positive_count }} positivos / {{ feedback_profile.negative_count }} negativos)</span>
+      </div>
+      <div class="meta-item">
+        <strong>Nicho e modo</strong>
+        <span>{{ feedback_profile.niche }} / {{ feedback_profile.mode }}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Vocabulário recorrente</strong>
+        <span>{{ feedback_profile.successful_keywords_preview|join(", ") if feedback_profile.successful_keywords_preview else "Sem destaque ainda" }}</span>
+      </div>
+    </div>
+    {% else %}
+    <p style="color: #888;">Ainda não há feedback suficiente para recalibrar o ranking deste nicho.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="card">
     <h2>🔍 Análise</h2>
     <form method="get" action="/jobs/{{ job.id }}/view" class="form-group">
@@ -674,6 +889,11 @@
           {% endif %}
 
           <span class="badge">{{ candidate.reason }}</span>
+          {% if candidate.feedback_label %}
+          <span class="badge {% if candidate.feedback_alignment_score >= 0 %}badge-feedback-good{% else %}badge-feedback-warn{% endif %}">
+            {{ candidate.feedback_label }}{% if candidate.feedback_alignment_score != 0 %} ({{ candidate.feedback_alignment_score }}){% endif %}
+          </span>
+          {% endif %}
         </div>
 
         <div class="section-label">📌 Gancho inicial</div>

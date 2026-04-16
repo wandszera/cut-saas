@@ -18,6 +18,9 @@ class Job(Base):
     transcript_path = Column(String, nullable=True)
     result_path = Column(String, nullable=True)
 
+    detected_niche = Column(String, nullable=True)
+    niche_confidence = Column(String, nullable=True)
+
     error_message = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

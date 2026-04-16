@@ -18,17 +18,16 @@ def get_mode_config(mode: str) -> dict[str, Any]:
     if mode == "long":
         return {
             "mode": "long",
-            "min_duration": 300.0,   # 5 min
-            "target_duration": 600.0, # 10 min
-            "max_duration": 900.0,   # 15 min
+            "min_duration": 300.0,
+            "target_duration": 600.0,
+            "max_duration": 900.0,
             "window_step_segments": 2,
         }
 
-    # default = short
     return {
         "mode": "short",
         "min_duration": 30.0,
-        "target_duration": 120.0,
+        "target_duration": 90.0,
         "max_duration": 180.0,
         "window_step_segments": 1,
     }
@@ -38,10 +37,6 @@ def build_candidate_windows(
     segments: list[dict[str, Any]],
     mode: str = "short",
 ) -> list[dict[str, Any]]:
-    """
-    Gera múltiplos candidatos por janelas de tempo.
-    Em vez de apenas agrupar linearmente, testa várias janelas com tamanhos adequados ao modo.
-    """
     if not segments:
         return []
 
@@ -60,13 +55,7 @@ def build_candidate_windows(
 
         for j in range(i, n):
             seg = segments[j]
-            seg_start = float(seg["start"])
             seg_end = float(seg["end"])
-
-            if not group:
-                group.append(seg)
-                last_end = seg_end
-                continue
 
             group.append(seg)
             last_end = seg_end
@@ -74,27 +63,42 @@ def build_candidate_windows(
             duration = last_end - start
 
             if duration >= min_duration:
-                candidate = _build_candidate(group, mode=mode)
+                candidate = _build_candidate(
+                    group,
+                    mode=mode,
+                    previous_segment=segments[i - 1] if i > 0 else None,
+                    next_segment=segments[j + 1] if j + 1 < n else None,
+                )
                 if candidate["duration"] <= max_duration:
                     candidates.append(candidate)
 
             if duration > max_duration:
                 break
 
-    # remove duplicados muito parecidos
     return deduplicate_candidates(candidates)
 
 
-def _build_candidate(group: list[dict[str, Any]], mode: str) -> dict[str, Any]:
+def _build_candidate(
+    group: list[dict[str, Any]],
+    mode: str,
+    previous_segment: dict[str, Any] | None = None,
+    next_segment: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     start = float(group[0]["start"])
     end = float(group[-1]["end"])
     text = " ".join(seg.get("text", "").strip() for seg in group).strip()
 
     opening_segments = group[: min(3, len(group))]
+    middle_segments = group[len(group)//3: (2 * len(group))//3] if len(group) >= 3 else group
     closing_segments = group[-min(3, len(group)) :]
 
     opening_text = " ".join(seg.get("text", "").strip() for seg in opening_segments).strip()
+    middle_text = " ".join(seg.get("text", "").strip() for seg in middle_segments).strip()
     closing_text = " ".join(seg.get("text", "").strip() for seg in closing_segments).strip()
+    pause_before = round(start - float(previous_segment["end"]), 2) if previous_segment else 0.0
+    pause_after = round(float(next_segment["start"]) - end, 2) if next_segment else 0.0
+    starts_clean = not (previous_segment and not str(previous_segment.get("text", "")).strip().endswith((".", "!", "?", ":", ";")))
+    ends_clean = bool(str(group[-1].get("text", "")).strip().endswith((".", "!", "?", ":", ";")))
 
     return {
         "start": round(start, 2),
@@ -102,8 +106,13 @@ def _build_candidate(group: list[dict[str, Any]], mode: str) -> dict[str, Any]:
         "duration": round(end - start, 2),
         "text": text,
         "opening_text": opening_text,
+        "middle_text": middle_text,
         "closing_text": closing_text,
         "segments_count": len(group),
+        "pause_before": pause_before,
+        "pause_after": pause_after,
+        "starts_clean": starts_clean,
+        "ends_clean": ends_clean,
         "mode": mode,
     }
 
@@ -112,9 +121,6 @@ def deduplicate_candidates(
     candidates: list[dict[str, Any]],
     time_tolerance: float = 8.0,
 ) -> list[dict[str, Any]]:
-    """
-    Remove candidatos quase iguais.
-    """
     if not candidates:
         return []
 
@@ -124,10 +130,15 @@ def deduplicate_candidates(
     for cand in candidates:
         is_duplicate = False
         for kept in filtered:
+            overlap_start = max(cand["start"], kept["start"])
+            overlap_end = min(cand["end"], kept["end"])
+            overlap = max(0.0, overlap_end - overlap_start)
+            shorter = min(cand["duration"], kept["duration"]) or 1.0
+            overlap_ratio = overlap / shorter
             if (
                 abs(cand["start"] - kept["start"]) <= time_tolerance
                 and abs(cand["end"] - kept["end"]) <= time_tolerance
-            ):
+            ) or overlap_ratio >= 0.9:
                 is_duplicate = True
                 break
 
