@@ -16,8 +16,6 @@ from app.models.job import Job
 from app.models.job_step import JobStep
 from app.core.config import settings
 from app.services.candidates import get_candidates_for_job, regenerate_candidates_for_job
-from app.services.clipping import render_clip
-from app.services.editorial import build_editorial_package
 from app.services.exports import list_job_export_bundles
 from app.services.niche_learning import (
     get_feedback_profile_for_niche,
@@ -34,9 +32,11 @@ from app.services.niche_registry import (
 )
 from app.services.pipeline import MAX_STEP_ATTEMPTS, get_job_steps, process_job_pipeline
 from app.services.render_presets import DEFAULT_PRESET, list_render_presets
+from app.services.render_workflow import render_candidate_clip, render_manual_clip
+from app.services.serializers import serialize_candidate, serialize_clip
+from app.services.system_diagnostics import build_system_diagnostics
 from app.services.scoring import score_candidates
 from app.services.segmentation import build_candidate_windows, load_segments
-from app.services.subtitles import generate_ass_for_clip
 from app.utils.media_urls import build_static_url
 
 
@@ -76,6 +76,26 @@ def _get_candidate_or_404(db: Session, candidate_id: int) -> Candidate:
     return candidate
 
 
+def _job_view_url(
+    job_id: int,
+    *,
+    mode: str | None = None,
+    render_preset: str | None = None,
+    message: str | None = None,
+    level: str = "success",
+) -> str:
+    params: dict[str, str] = {}
+    if mode:
+        params["mode"] = _normalize_mode(mode)
+    if render_preset:
+        params["render_preset"] = render_preset
+    if message:
+        params["message"] = message
+        params["message_level"] = level
+    query = urlencode(params)
+    return f"/jobs/{job_id}/view?{query}" if query else f"/jobs/{job_id}/view"
+
+
 def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     raw_segments = load_segments(job.transcript_path)
     candidates = build_candidate_windows(raw_segments, mode=mode)
@@ -95,79 +115,15 @@ def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     )
 
 
-def serialize_candidate(candidate: Candidate) -> dict:
-    return {
-        "candidate_id": candidate.id,
-        "start": candidate.start_time,
-        "end": candidate.end_time,
-        "duration": candidate.duration,
-        "heuristic_score": candidate.heuristic_score,
-        "score": candidate.score,
-        "reason": candidate.reason,
-        "opening_text": candidate.opening_text,
-        "closing_text": candidate.closing_text,
-        "text": candidate.full_text,
-        "hook_score": candidate.hook_score,
-        "clarity_score": candidate.clarity_score,
-        "closure_score": candidate.closure_score,
-        "emotion_score": candidate.emotion_score,
-        "duration_fit_score": candidate.duration_fit_score,
-        "transcript_context_score": candidate.transcript_context_score,
-        "llm_score": candidate.llm_score,
-        "llm_why": candidate.llm_why,
-        "llm_title": candidate.llm_title,
-        "llm_hook": candidate.llm_hook,
-        "status": candidate.status,
-        "is_favorite": candidate.is_favorite,
-        "editorial_notes": candidate.editorial_notes,
-    }
-
-
-def build_clip_record(
-    *,
+def _ensure_page_candidates(
+    db: Session,
     job: Job,
-    source: str,
     mode: str,
-    start: float,
-    end: float,
-    duration: float,
-    score: float | None,
-    reason: str | None,
-    text: str | None,
-    subtitles_burned: bool,
-    output_path: str,
-    render_preset: str,
-) -> Clip:
-    editorial = build_editorial_package(
-        job_title=job.title,
-        niche=job.detected_niche,
-        mode=mode,
-        clip_id=None,
-        start=start,
-        end=end,
-        text=text,
-        reason=reason,
-        render_preset=render_preset,
-    )
-    return Clip(
-        job_id=job.id,
-        source=source,
-        mode=mode,
-        start_time=start,
-        end_time=end,
-        duration=duration,
-        score=score,
-        reason=reason,
-        text=text,
-        headline=editorial["headline"],
-        description=editorial["description"],
-        hashtags=editorial["hashtags"],
-        suggested_filename=editorial["suggested_filename"],
-        render_preset=render_preset,
-        publication_status="draft",
-        subtitles_burned=subtitles_burned,
-        output_path=output_path,
-    )
+) -> list[Candidate]:
+    saved_candidates = get_candidates_for_job(db, job.id, mode)
+    if saved_candidates:
+        return saved_candidates
+    return regenerate_candidates_for_job(db, job, mode=mode)
 
 
 def format_seconds_to_mmss(seconds: float | int | None) -> str:
@@ -189,6 +145,19 @@ def filter_jobs_for_view(jobs: list[Job], view_filter: str) -> list[Job]:
     if normalized == "failed":
         return [job for job in jobs if job.status == "failed"]
     return jobs
+
+
+def search_jobs_for_view(jobs: list[Job], search_query: str) -> list[Job]:
+    normalized = (search_query or "").strip().lower()
+    if not normalized:
+        return jobs
+
+    def _matches(job: Job) -> bool:
+        title = (job.title or "").lower()
+        source = (job.source_value or "").lower()
+        return normalized in title or normalized in source or normalized in f"job {job.id}"
+
+    return [job for job in jobs if _matches(job)]
 
 
 def enrich_jobs_with_progress(db: Session, jobs: list[Job]) -> list[Job]:
@@ -553,27 +522,10 @@ def enrich_clips_for_view(clips: list[Clip]) -> list[dict]:
     enriched = []
 
     for clip in clips:
+        base_payload = serialize_clip(clip)
         enriched.append(
             {
-                "id": clip.id,
-                "job_id": clip.job_id,
-                "source": clip.source,
-                "mode": clip.mode,
-                "start_time": clip.start_time,
-                "end_time": clip.end_time,
-                "duration": clip.duration,
-                "score": clip.score,
-                "reason": clip.reason,
-                "text": clip.text,
-                "subtitles_burned": clip.subtitles_burned,
-                "output_path": clip.output_path,
-                "headline": clip.headline,
-                "description": clip.description,
-                "hashtags": clip.hashtags,
-                "suggested_filename": clip.suggested_filename,
-                "render_preset": clip.render_preset,
-                "publication_status": clip.publication_status,
-                "created_at": clip.created_at,
+                **base_payload,
                 "format_label": "9:16" if clip.mode == "short" else "16:9",
                 "start_mmss": format_seconds_to_mmss(clip.start_time),
                 "end_mmss": format_seconds_to_mmss(clip.end_time),
@@ -737,10 +689,16 @@ def enrich_transcript_insights_for_view(raw_insights: str | None) -> dict | None
 
 
 @router.get("/")
-def home(request: Request, status_filter: str = "all", db: Session = Depends(get_db)):
+def home(
+    request: Request,
+    status_filter: str = "all",
+    search_query: str = "",
+    db: Session = Depends(get_db),
+):
     recent_jobs = db.query(Job).order_by(Job.created_at.desc()).limit(20).all()
     recent_jobs = enrich_jobs_with_progress(db, recent_jobs)
     filtered_jobs = filter_jobs_for_view(recent_jobs, status_filter)
+    filtered_jobs = search_jobs_for_view(filtered_jobs, search_query)
     dashboard_summary = build_dashboard_summary(db, recent_jobs)
     publication_board = build_publication_board(db, recent_jobs)
 
@@ -750,6 +708,7 @@ def home(request: Request, status_filter: str = "all", db: Session = Depends(get
         {
             "recent_jobs": filtered_jobs,
             "status_filter": status_filter,
+            "search_query": search_query,
             "dashboard_summary": dashboard_summary,
             "publication_board": publication_board,
             "now": datetime.utcnow(),
@@ -778,6 +737,18 @@ def niche_admin_page(
             "pending_niches": pending_niches,
             "inactive_niches": inactive_niches,
             "flash": _build_niche_flash(message, level),
+        },
+    )
+
+
+@router.get("/system")
+def system_status_page(request: Request):
+    diagnostics = build_system_diagnostics()
+    return templates.TemplateResponse(
+        request,
+        "system.html",
+        {
+            "diagnostics": diagnostics,
         },
     )
 
@@ -849,7 +820,7 @@ def create_job_from_form(
 
     background_tasks.add_task(process_job_pipeline, job.id)
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view", status_code=303)
+    return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
 
 @router.post("/web/jobs/create-local")
@@ -890,7 +861,7 @@ def create_local_job_from_form(
 
     video_file.file.close()
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view", status_code=303)
+    return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
 
 @router.post("/jobs/{job_id}/view/retry")
@@ -910,7 +881,7 @@ def retry_job_from_page(
     db.commit()
 
     background_tasks.add_task(process_job_pipeline, job.id, force_bool)
-    return RedirectResponse(url=f"/jobs/{job.id}/view", status_code=303)
+    return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
 
 @router.post("/jobs/{job_id}/view/steps/{step_name}/retry")
@@ -932,7 +903,7 @@ def retry_job_step_from_page(
     reset_pipeline_state_from_step(db, job, normalized_step, reset_attempts=False)
     background_tasks.add_task(process_job_pipeline, job.id, force_bool, normalized_step)
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view", status_code=303)
+    return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
 
 @router.post("/jobs/{job_id}/view/steps/{step_name}/reset")
@@ -950,7 +921,7 @@ def reset_job_step_from_page(
     normalized_step = validate_step_name(step_name)
     reset_pipeline_state_from_step(db, job, normalized_step, reset_attempts=True)
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view", status_code=303)
+    return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
 
 @router.post("/jobs/{job_id}/view/feedback/recalibrate")
@@ -966,7 +937,10 @@ def recalibrate_feedback_from_page(
     normalized_mode = _normalize_mode(mode)
     learn_keywords_for_niche(db, niche=(job.detected_niche or "geral").lower().strip())
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view?mode={normalized_mode}", status_code=303)
+    return RedirectResponse(
+        url=_job_view_url(job.id, mode=normalized_mode, message="Aprendizado recalibrado."),
+        status_code=303,
+    )
 
 
 @router.get("/jobs/{job_id}/view")
@@ -975,6 +949,8 @@ def job_detail(
     request: Request,
     mode: str = "short",
     render_preset: str = DEFAULT_PRESET,
+    message: str | None = None,
+    message_level: str = "success",
     candidate_filter: str = "all",
     candidate_sort: str = "hybrid",
     clip_filter: str = "all",
@@ -992,7 +968,7 @@ def job_detail(
     transcript_insights = enrich_transcript_insights_for_view(job.transcript_insights)
     if job.transcript_path and job.status == "done":
         feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", normalized_mode)
-        saved_candidates = get_candidates_for_job(db, job.id, normalized_mode)
+        saved_candidates = _ensure_page_candidates(db, job, normalized_mode)
         candidates_missing = not bool(saved_candidates)
         if saved_candidates:
             candidates = enrich_candidates_for_view(
@@ -1056,6 +1032,7 @@ def job_detail(
             "video_url": build_static_url(job.video_path),
             "audio_url": build_static_url(job.audio_path),
             "transcript_url": build_static_url(job.transcript_path),
+            "flash": {"message": message, "level": message_level} if message else None,
             "build_static_url": build_static_url,
         },
     )
@@ -1085,50 +1062,22 @@ def render_candidate_from_page(
     if candidate.job_id != job.id or candidate.mode != normalized_mode:
         raise HTTPException(status_code=400, detail="Candidato não pertence ao job/modo informado")
 
-    subtitles_path = None
-    if burn_subtitles_bool:
-        subtitles_path = generate_ass_for_clip(
-            transcript_path=job.transcript_path,
-            job_id=job.id,
-            clip_index=candidate.id,
-            clip_start=candidate.start_time,
-            clip_end=candidate.end_time,
-            mode=normalized_mode,
-            render_preset=render_preset,
-        )
-
-    output_path = render_clip(
-        video_path=job.video_path,
-        job_id=job.id,
-        clip_index=candidate.id,
-        start=candidate.start_time,
-        end=candidate.end_time,
-        mode=normalized_mode,
-        burn_subtitles=burn_subtitles_bool,
-        subtitles_path=subtitles_path,
-        render_preset=render_preset,
-    )
-
-    clip = build_clip_record(
+    clip, _subtitles_path, _output_path = render_candidate_clip(
+        db=db,
         job=job,
-        source="candidate",
-        mode=normalized_mode,
-        start=candidate.start_time,
-        end=candidate.end_time,
-        duration=candidate.duration,
-        score=candidate.score,
-        reason=candidate.reason,
-        text=candidate.full_text,
-        subtitles_burned=burn_subtitles_bool,
-        output_path=output_path,
+        candidate=candidate,
+        burn_subtitles=burn_subtitles_bool,
         render_preset=render_preset,
     )
-    db.add(clip)
-    candidate.status = "rendered"
     db.commit()
 
     return RedirectResponse(
-        url=f"/jobs/{job.id}/view?mode={normalized_mode}&render_preset={render_preset}",
+        url=_job_view_url(
+            job.id,
+            mode=normalized_mode,
+            render_preset=render_preset,
+            message="Render concluido com sucesso.",
+        ),
         status_code=303,
     )
 
@@ -1157,7 +1106,10 @@ def update_candidate_status_from_page(
     candidate.status = normalized_status
     db.commit()
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view?mode={_normalize_mode(mode)}", status_code=303)
+    return RedirectResponse(
+        url=_job_view_url(job.id, mode=mode, message="Atualizacao salva."),
+        status_code=303,
+    )
 
 
 @router.post("/jobs/{job_id}/view/candidates/{candidate_id}/favorite")
@@ -1178,7 +1130,10 @@ def toggle_candidate_favorite_from_page(
     candidate.is_favorite = not bool(candidate.is_favorite)
     db.commit()
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view?mode={_normalize_mode(mode)}", status_code=303)
+    return RedirectResponse(
+        url=_job_view_url(job.id, mode=mode, message="Atualizacao salva."),
+        status_code=303,
+    )
 
 
 @router.post("/jobs/{job_id}/view/candidates/{candidate_id}/notes")
@@ -1200,7 +1155,88 @@ def update_candidate_notes_from_page(
     candidate.editorial_notes = editorial_notes.strip() or None
     db.commit()
 
-    return RedirectResponse(url=f"/jobs/{job.id}/view?mode={_normalize_mode(mode)}", status_code=303)
+    return RedirectResponse(
+        url=_job_view_url(job.id, mode=mode, message="Atualizacao salva."),
+        status_code=303,
+    )
+
+
+@router.post("/jobs/{job_id}/view/candidates/bulk")
+def bulk_update_candidates_from_page(
+    job_id: int,
+    mode: str = Form("short"),
+    bulk_action: str = Form(...),
+    candidate_ids: list[int] = Form([]),
+    render_preset: str = Form(DEFAULT_PRESET),
+    burn_subtitles: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job nÃ£o encontrado")
+
+    normalized_mode = _normalize_mode(mode)
+    normalized_action = (bulk_action or "").strip().lower()
+    selected_ids = [int(candidate_id) for candidate_id in candidate_ids if int(candidate_id) > 0]
+    if not selected_ids:
+        return RedirectResponse(
+            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Selecione ao menos um candidato.", level="error"),
+            status_code=303,
+        )
+
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.job_id == job.id, Candidate.mode == normalized_mode, Candidate.id.in_(selected_ids))
+        .all()
+    )
+    if len(candidates) != len(set(selected_ids)):
+        return RedirectResponse(
+            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Alguns candidatos selecionados nao pertencem ao job ou modo atual.", level="error"),
+            status_code=303,
+        )
+
+    if normalized_action in {"approve", "reject", "reset"}:
+        target_status = {"approve": "approved", "reject": "rejected", "reset": "pending"}[normalized_action]
+        for candidate in candidates:
+            candidate.status = target_status
+        db.commit()
+        return RedirectResponse(
+            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Candidatos atualizados em lote."),
+            status_code=303,
+        )
+
+    if normalized_action in {"favorite_on", "favorite_off"}:
+        favorite_value = normalized_action == "favorite_on"
+        for candidate in candidates:
+            candidate.is_favorite = favorite_value
+        db.commit()
+        return RedirectResponse(
+            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Favoritos atualizados em lote."),
+            status_code=303,
+        )
+
+    if normalized_action == "render":
+        if not job.video_path or not job.transcript_path:
+            raise HTTPException(status_code=400, detail="Job incompleto")
+        burn_subtitles_bool = burn_subtitles is not None
+        for candidate in sorted(candidates, key=lambda row: (not bool(row.is_favorite), -(row.score or 0), row.created_at)):
+            render_candidate_clip(
+                db=db,
+                job=job,
+                candidate=candidate,
+                burn_subtitles=burn_subtitles_bool,
+                render_preset=render_preset,
+            )
+        db.commit()
+        return RedirectResponse(
+            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Selecao renderizada com sucesso."),
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Acao em lote invalida.", level="error"),
+        status_code=303,
+    )
 
 
 @router.post("/jobs/{job_id}/view/clips/{clip_id}/publication")
@@ -1229,7 +1265,12 @@ def update_clip_publication_status_from_page(
     db.commit()
 
     return RedirectResponse(
-        url=f"/jobs/{job.id}/view?mode={_normalize_mode(mode)}&render_preset={render_preset}",
+        url=_job_view_url(
+            job.id,
+            mode=mode,
+            render_preset=render_preset,
+            message="Status de publicacao atualizado.",
+        ),
         status_code=303,
     )
 
@@ -1262,52 +1303,23 @@ def render_approved_from_page(
     )
 
     for candidate in approved_candidates:
-        subtitles_path = None
-        if burn_subtitles_bool:
-            subtitles_path = generate_ass_for_clip(
-                transcript_path=job.transcript_path,
-                job_id=job.id,
-                clip_index=candidate.id,
-                clip_start=candidate.start_time,
-                clip_end=candidate.end_time,
-                mode=normalized_mode,
-                render_preset=render_preset,
-            )
-
-        output_path = render_clip(
-            video_path=job.video_path,
-            job_id=job.id,
-            clip_index=candidate.id,
-            start=candidate.start_time,
-            end=candidate.end_time,
-            mode=normalized_mode,
+        render_candidate_clip(
+            db=db,
+            job=job,
+            candidate=candidate,
             burn_subtitles=burn_subtitles_bool,
-            subtitles_path=subtitles_path,
             render_preset=render_preset,
         )
-
-        db.add(
-            build_clip_record(
-                job=job,
-                source="candidate",
-                mode=normalized_mode,
-                start=candidate.start_time,
-                end=candidate.end_time,
-                duration=candidate.duration,
-                score=candidate.score,
-                reason=candidate.reason,
-                text=candidate.full_text,
-                subtitles_burned=burn_subtitles_bool,
-                output_path=output_path,
-                render_preset=render_preset,
-            )
-        )
-        candidate.status = "rendered"
 
     db.commit()
 
     return RedirectResponse(
-        url=f"/jobs/{job.id}/view?mode={normalized_mode}&render_preset={render_preset}",
+        url=_job_view_url(
+            job.id,
+            mode=normalized_mode,
+            render_preset=render_preset,
+            message="Render concluido com sucesso.",
+        ),
         status_code=303,
     )
 
@@ -1333,50 +1345,26 @@ def render_manual_from_page(
         raise HTTPException(status_code=400, detail="end deve ser maior que start")
 
     burn_subtitles_bool = burn_subtitles is not None
-    duration = round(end - start, 2)
 
-    subtitles_path = None
-    if burn_subtitles_bool:
-        subtitles_path = generate_ass_for_clip(
-            transcript_path=job.transcript_path,
-            job_id=job.id,
-            clip_index=9999,
-            clip_start=start,
-            clip_end=end,
-            mode=normalized_mode,
-            render_preset=render_preset,
-        )
-
-    output_path = render_clip(
-        video_path=job.video_path,
-        job_id=job.id,
-        clip_index=9999,
+    clip, _subtitles_path, _output_path = render_manual_clip(
+        db=db,
+        job=job,
         start=start,
         end=end,
         mode=normalized_mode,
         burn_subtitles=burn_subtitles_bool,
-        subtitles_path=subtitles_path,
         render_preset=render_preset,
-    )
-
-    clip = build_clip_record(
-        job=job,
-        source="manual",
-        mode=normalized_mode,
-        start=start,
-        end=end,
-        duration=duration,
-        score=None,
+        clip_index=9999,
         reason="Render manual via interface web",
-        text=None,
-        subtitles_burned=burn_subtitles_bool,
-        output_path=output_path,
-        render_preset=render_preset,
     )
-    db.add(clip)
     db.commit()
 
     return RedirectResponse(
-        url=f"/jobs/{job.id}/view?mode={normalized_mode}&render_preset={render_preset}",
+        url=_job_view_url(
+            job.id,
+            mode=normalized_mode,
+            render_preset=render_preset,
+            message="Render concluido com sucesso.",
+        ),
         status_code=303,
     )

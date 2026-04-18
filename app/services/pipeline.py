@@ -10,6 +10,7 @@ from app.db.database import SessionLocal
 from app.models.job import Job
 from app.models.job_step import JobStep
 from app.services.audio import extract_audio_from_video
+from app.services.candidates import ensure_default_candidates_for_job
 from app.services.niche_classifier import detect_niche
 from app.services.segmentation import load_transcript
 from app.services.transcript_insights import analyze_transcript_context
@@ -495,6 +496,10 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
     job.transcript_insights = json.dumps(insights, ensure_ascii=False) if insights else None
     db.commit()
 
+    candidate_summary = {}
+    if _path_exists(job.transcript_path):
+        candidate_summary = ensure_default_candidates_for_job(db, job, modes=("short",), force=force)
+
     mark_step_completed(
         db,
         job,
@@ -503,6 +508,7 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
             "detected_niche": job.detected_niche,
             "niche_confidence": job.niche_confidence,
             "insights_generated": bool(job.transcript_insights),
+            "generated_candidates": candidate_summary,
         },
     )
 

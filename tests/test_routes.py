@@ -379,6 +379,70 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("podcast", response.text.lower())
         self.assertIn("religioso", response.text.lower())
 
+    def test_system_status_page_renders_diagnostics(self):
+        response = self.client.get("/system")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Diagnóstico Operacional", response.text)
+        self.assertIn("Checks do ambiente", response.text)
+        self.assertIn("Configuração carregada", response.text)
+
+    def test_api_lists_niches_with_summary_counts(self):
+        self._create_niche_definition(name="Financas Creator", slug="financas-creator", status="pending")
+        self._create_niche_definition(name="Historico", slug="historico", status="archived")
+
+        response = self.client.get("/jobs/niches")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertGreaterEqual(data["active_count"], 1)
+        self.assertEqual(data["pending_count"], 1)
+        self.assertEqual(data["inactive_count"], 1)
+        self.assertTrue(any(niche["slug"] == "financas-creator" for niche in data["niches"]))
+
+    def test_api_create_niche_returns_pending_payload(self):
+        with patch(
+            "app.api.routes_jobs.create_pending_niche",
+            return_value={
+                "name": "Empreendedorismo Local",
+                "slug": "empreendedorismo-local",
+                "description": "Negocios locais, vendas e operacao.",
+                "keywords": ["vendas", "caixa", "cliente"],
+                "weights": {"hook": 1.1},
+                "source": "custom",
+                "status": "pending",
+                "llm_notes": "Sugestao consistente",
+            },
+        ) as mocked_create:
+            response = self.client.post(
+                "/jobs/niches",
+                json={
+                    "name": "Empreendedorismo Local",
+                    "description": "Pequenos negocios, vendas e caixa.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["niche"]["slug"], "empreendedorismo-local")
+        self.assertEqual(data["niche"]["status"], "pending")
+        mocked_create.assert_called_once()
+
+    def test_api_approve_reject_and_archive_niche_endpoints(self):
+        niche = self._create_niche_definition(name="Financas Creator", slug="financas-creator", status="pending")
+
+        approve_response = self.client.post(f"/jobs/niches/{niche.slug}/approve")
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["niche"]["status"], "active")
+
+        reject_response = self.client.post(f"/jobs/niches/{niche.slug}/reject")
+        self.assertEqual(reject_response.status_code, 200)
+        self.assertEqual(reject_response.json()["niche"]["status"], "rejected")
+
+        archive_response = self.client.post(f"/jobs/niches/{niche.slug}/archive")
+        self.assertEqual(archive_response.status_code, 200)
+        self.assertEqual(archive_response.json()["niche"]["status"], "archived")
+
     def test_niche_suggestion_flow_creates_pending_niche(self):
         with patch(
             "app.web.routes_pages.create_pending_niche",
@@ -546,7 +610,8 @@ class RoutesTestCase(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view?mode=short")
+        self.assertTrue(response.headers["location"].startswith(f"/jobs/{job.id}/view?mode=short"))
+        self.assertIn("message=Aprendizado+recalibrado.", response.headers["location"])
         mocked_learn.assert_called_once()
 
     def test_candidate_editorial_actions_from_page_update_state(self):
@@ -583,6 +648,33 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
+    def test_bulk_candidate_editorial_actions_from_page_update_state(self):
+        job = self._create_job()
+        first = self._create_candidate(job.id, status="pending", is_favorite=False)
+        second = self._create_candidate(job.id, status="pending", is_favorite=False)
+
+        approve_response = self.client.post(
+            f"/jobs/{job.id}/view/candidates/bulk",
+            data={"mode": "short", "bulk_action": "approve", "candidate_ids": [first.id, second.id]},
+            follow_redirects=False,
+        )
+        self.assertEqual(approve_response.status_code, 303)
+
+        favorite_response = self.client.post(
+            f"/jobs/{job.id}/view/candidates/bulk",
+            data={"mode": "short", "bulk_action": "favorite_on", "candidate_ids": [first.id, second.id]},
+            follow_redirects=False,
+        )
+        self.assertEqual(favorite_response.status_code, 303)
+
+        db = self._session()
+        try:
+            refreshed = db.query(Candidate).filter(Candidate.job_id == job.id).all()
+            self.assertTrue(all(candidate.status == "approved" for candidate in refreshed))
+            self.assertTrue(all(candidate.is_favorite for candidate in refreshed))
+        finally:
+            db.close()
+
     def test_render_approved_from_page_creates_clips_and_marks_candidates_rendered(self):
         job = self._create_job()
         first = self._create_candidate(job.id, status="approved", is_favorite=True, start_time=10.0, end_time=70.0, duration=60.0)
@@ -591,7 +683,7 @@ class RoutesTestCase(unittest.TestCase):
         def render_side_effect(**kwargs):
             return f"C:/tmp/page_rendered_{kwargs['clip_index']}.mp4"
 
-        with patch("app.web.routes_pages.render_clip", side_effect=render_side_effect):
+        with patch("app.services.render_workflow.render_clip", side_effect=render_side_effect):
             response = self.client.post(
                 f"/jobs/{job.id}/view/render-approved",
                 data={"mode": "short", "render_preset": "impact"},
@@ -599,7 +691,8 @@ class RoutesTestCase(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view?mode=short&render_preset=impact")
+        self.assertTrue(response.headers["location"].startswith(f"/jobs/{job.id}/view?mode=short&render_preset=impact"))
+        self.assertIn("message=Render+concluido+com+sucesso.", response.headers["location"])
 
         db = self._session()
         try:
@@ -721,6 +814,16 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("Falhou", response.text)
         self.assertNotIn("Finalizado", response.text)
 
+    def test_home_filters_jobs_by_search_query(self):
+        self._create_job(status="done", title="Podcast de vendas")
+        self._create_job(status="done", title="Resumo financeiro")
+
+        response = self.client.get("/", params={"search_query": "vendas"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Podcast de vendas", response.text)
+        self.assertNotIn("Resumo financeiro", response.text)
+
     def test_home_renders_dashboard_summary_cards(self):
         job_done = self._create_job(status="done", title="Com clip")
         job_active = self._create_job(status="transcribing", title="Ativo")
@@ -786,6 +889,65 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("texto favorito", response.text)
         self.assertNotIn("texto rejeitado", response.text)
         self.assertIn(export_zip.name, response.text)
+
+    def test_job_detail_renders_flash_feedback_banner(self):
+        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        self._create_candidate(job.id, full_text="texto existente")
+
+        response = self.client.get(
+            f"/jobs/{job.id}/view",
+            params={"message": "Atualizacao salva.", "message_level": "success"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Sucesso", response.text)
+        self.assertIn("Atualizacao salva.", response.text)
+
+    def test_job_detail_backfills_candidates_when_done_job_has_none(self):
+        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+
+        db = self._session()
+        try:
+            db.query(Candidate).filter(Candidate.job_id == job.id).delete()
+            db.commit()
+        finally:
+            db.close()
+
+        class CandidateStub:
+            id = 99
+            mode = "short"
+            start_time = 10.0
+            end_time = 70.0
+            duration = 60.0
+            heuristic_score = 9.1
+            score = 9.3
+            reason = "gancho forte"
+            opening_text = "abertura"
+            closing_text = "fechamento"
+            full_text = "texto completo"
+            hook_score = 2.0
+            clarity_score = 1.5
+            closure_score = 1.0
+            emotion_score = 0.5
+            duration_fit_score = 3.0
+            transcript_context_score = 0.0
+            llm_score = None
+            llm_why = None
+            llm_title = None
+            llm_hook = None
+            status = "pending"
+            is_favorite = False
+            editorial_notes = None
+
+        def regenerate_side_effect(db_session, job_row, mode="short"):
+            return [CandidateStub()]
+
+        with patch("app.web.routes_pages.regenerate_candidates_for_job", side_effect=regenerate_side_effect) as mocked_regenerate:
+            response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("texto completo", response.text)
+        mocked_regenerate.assert_called_once()
 
     def test_job_detail_sorts_candidates_by_llm_score(self):
         job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
@@ -1321,7 +1483,11 @@ class RoutesTestCase(unittest.TestCase):
             patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
             patch(
                 "app.services.pipeline._path_exists",
-                side_effect=lambda value: value in {"C:/tmp/existing_video.mp4", "C:/tmp/existing_audio.mp3"},
+                side_effect=lambda value: value in {
+                    "C:/tmp/existing_video.mp4",
+                    "C:/tmp/existing_audio.mp3",
+                    "C:/tmp/generated_transcript.json",
+                },
             ),
             patch("app.services.pipeline.transcribe_audio", return_value="C:/tmp/generated_transcript.json"),
             patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste"}),
@@ -1330,6 +1496,7 @@ class RoutesTestCase(unittest.TestCase):
                 "app.services.pipeline.analyze_transcript_context",
                 return_value={"priority_keywords": ["resultado"], "promising_ranges": []},
             ),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={}),
         ):
             process_job_pipeline(job.id, start_from_step="transcribing")
 
@@ -1347,6 +1514,54 @@ class RoutesTestCase(unittest.TestCase):
 
             refreshed_job = db.query(Job).filter(Job.id == job.id).one()
             self.assertIn("priority_keywords", refreshed_job.transcript_insights)
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_generates_default_short_candidates_after_analyzing(self):
+        job = self._create_job(
+            status="pending",
+            video_path="C:/tmp/existing_video.mp4",
+            audio_path="C:/tmp/existing_audio.mp3",
+            transcript_path=None,
+            detected_niche=None,
+            niche_confidence=None,
+        )
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.transcribe_audio", return_value="C:/tmp/generated_transcript.json"),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 1}) as mocked_generate,
+        ):
+            process_job_pipeline(job.id, start_from_step="transcribing")
+
+        db = self._session()
+        try:
+            analyzing_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "analyzing")
+                .one()
+            )
+            self.assertIn('"generated_candidates": {"short": 1}', analyzing_step.details)
+            mocked_generate.assert_called_once()
+        finally:
+            db.close()
+
+    def test_ensure_default_candidates_for_job_preserves_existing_candidates_without_force(self):
+        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        self._create_candidate(job.id, mode="short", status="approved", score=9.4)
+
+        db = self._session()
+        try:
+            from app.services.candidates import ensure_default_candidates_for_job
+
+            with patch("app.services.candidates.regenerate_candidates_for_job") as mocked_regenerate:
+                summary = ensure_default_candidates_for_job(db, db.query(Job).filter(Job.id == job.id).one(), modes=("short",))
+
+            self.assertEqual(summary["short"], 1)
+            mocked_regenerate.assert_not_called()
         finally:
             db.close()
 
@@ -1731,8 +1946,8 @@ class RoutesTestCase(unittest.TestCase):
         job = self._create_job()
 
         with (
-            patch("app.api.routes_jobs.generate_ass_for_clip", return_value="C:/tmp/clip.ass"),
-            patch("app.api.routes_jobs.render_clip", return_value="C:/tmp/clip_1.mp4"),
+            patch("app.services.render_workflow.generate_ass_for_clip", return_value="C:/tmp/clip.ass"),
+            patch("app.services.render_workflow.render_clip", return_value="C:/tmp/clip_1.mp4"),
         ):
             response = self.client.post(
                 f"/jobs/{job.id}/render-manual",
@@ -1835,7 +2050,7 @@ class RoutesTestCase(unittest.TestCase):
         job = self._create_job()
         candidate = self._create_candidate(job.id, status="approved")
 
-        with patch("app.api.routes_jobs.render_clip", return_value="C:/tmp/candidate_clip.mp4"):
+        with patch("app.services.render_workflow.render_clip", return_value="C:/tmp/candidate_clip.mp4"):
             response = self.client.post(f"/jobs/{job.id}/render-candidate-id/{candidate.id}")
 
         self.assertEqual(response.status_code, 200)
@@ -1879,8 +2094,8 @@ class RoutesTestCase(unittest.TestCase):
 
         with (
             patch("app.api.routes_jobs._get_ranked_candidates", return_value=ranked_candidates),
-            patch("app.api.routes_jobs.generate_ass_for_clip", return_value="C:/tmp/ranked.ass"),
-            patch("app.api.routes_jobs.render_clip", return_value="C:/tmp/ranked_clip.mp4"),
+            patch("app.services.render_workflow.generate_ass_for_clip", return_value="C:/tmp/ranked.ass"),
+            patch("app.services.render_workflow.render_clip", return_value="C:/tmp/ranked_clip.mp4"),
         ):
             response = self.client.post(
                 f"/jobs/{job.id}/render-candidate",
@@ -1962,7 +2177,7 @@ class RoutesTestCase(unittest.TestCase):
 
         with (
             patch("app.api.routes_jobs._get_ranked_candidates", return_value=ranked_candidates),
-            patch("app.api.routes_jobs.render_clip", side_effect=render_side_effect),
+            patch("app.services.render_workflow.render_clip", side_effect=render_side_effect),
         ):
             response = self.client.post(
                 f"/jobs/{job.id}/render",
@@ -1996,7 +2211,7 @@ class RoutesTestCase(unittest.TestCase):
         def render_side_effect(**kwargs):
             return f"C:/tmp/rendered_{kwargs['clip_index']}.mp4"
 
-        with patch("app.api.routes_jobs.render_clip", side_effect=render_side_effect):
+        with patch("app.services.render_workflow.render_clip", side_effect=render_side_effect):
             response = self.client.post(
                 f"/jobs/{job.id}/render-approved",
                 params={"mode": "short", "burn_subtitles": "false"},

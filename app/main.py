@@ -7,6 +7,7 @@ from app.db.migrations import (
     ensure_candidate_editorial_columns,
     ensure_clip_editorial_columns,
     ensure_job_insights_columns,
+    ensure_niche_definition_columns,
 )
 from app.api.routes_jobs import router as jobs_router
 from app.web.routes_pages import router as pages_router
@@ -24,6 +25,7 @@ Base.metadata.create_all(bind=engine)
 ensure_job_insights_columns()
 ensure_candidate_editorial_columns()
 ensure_clip_editorial_columns()
+ensure_niche_definition_columns()
 ensure_directories()
 with SessionLocal() as db:
     sync_builtin_niches(db)

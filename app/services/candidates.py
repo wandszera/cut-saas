@@ -111,6 +111,31 @@ def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Cand
     return created
 
 
+def ensure_default_candidates_for_job(
+    db: Session,
+    job: Job,
+    *,
+    modes: tuple[str, ...] = ("short",),
+    force: bool = False,
+) -> dict[str, int]:
+    summary: dict[str, int] = {}
+
+    for mode in modes:
+        existing_count = (
+            db.query(Candidate)
+            .filter(Candidate.job_id == job.id, Candidate.mode == mode)
+            .count()
+        )
+        if existing_count and not force:
+            summary[mode] = existing_count
+            continue
+
+        created = regenerate_candidates_for_job(db, job, mode)
+        summary[mode] = len(created)
+
+    return summary
+
+
 def get_candidates_for_job(db: Session, job_id: int, mode: str) -> list[Candidate]:
     return (
         db.query(Candidate)

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nichos - Cut SaaS</title>
+  <style>
+    :root {
+      --bg: #07111a;
+      --panel: rgba(12, 22, 34, 0.82);
+      --line: rgba(157, 197, 224, 0.14);
+      --line-strong: rgba(157, 197, 224, 0.24);
+      --text: #eef5fb;
+      --muted: #90a7bb;
+      --accent: #73f0c2;
+      --accent-2: #67b8ff;
+      --accent-3: #ffd37b;
+      --danger: #ff9b9d;
+      --radius-xl: 32px;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+      --font-body: "Manrope", "Segoe UI", sans-serif;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: var(--font-body);
+      background:
+        radial-gradient(circle at top left, rgba(103, 184, 255, 0.14), transparent 28%),
+        radial-gradient(circle at top right, rgba(255, 211, 123, 0.12), transparent 22%),
+        radial-gradient(circle at bottom right, rgba(115, 240, 194, 0.12), transparent 28%),
+        linear-gradient(180deg, #07121b 0%, #081018 100%);
+      padding: 26px;
+    }
+
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-radius: var(--radius-xl);
+      padding: 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--accent-3);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    h1, h2, h3 {
+      font-family: var(--font-display);
+      letter-spacing: -0.04em;
+    }
+
+    h1 {
+      margin: 18px 0 12px;
+      font-size: clamp(38px, 5vw, 68px);
+      line-height: 0.94;
+      max-width: 760px;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 720px;
+      color: #c0d0de;
+      font-size: 16px;
+    }
+
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-box {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .summary-box strong {
+      display: block;
+      font-size: 34px;
+      margin-bottom: 4px;
+    }
+
+    .summary-box span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .flash {
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid transparent;
+      font-size: 14px;
+    }
+
+    .flash-success { background: rgba(115, 240, 194, 0.1); border-color: rgba(115, 240, 194, 0.18); color: #d2f8e9; }
+    .flash-warning { background: rgba(255, 211, 123, 0.1); border-color: rgba(255, 211, 123, 0.18); color: #ffe6b4; }
+    .flash-error { background: rgba(255, 155, 157, 0.1); border-color: rgba(255, 155, 157, 0.18); color: #ffd3d4; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 520px;
+    }
+
+    .niche-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .niche-card {
+      padding: 20px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .niche-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .niche-name {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge-row,
+    .keywords,
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badge,
+    .keyword {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge {
+      background: rgba(255, 255, 255, 0.06);
+      color: #e8f2fb;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .badge-active {
+      background: rgba(115, 240, 194, 0.12);
+      color: #d4f9ea;
+      border-color: rgba(115, 240, 194, 0.16);
+    }
+
+    .badge-pending {
+      background: rgba(255, 211, 123, 0.12);
+      color: #ffe5b0;
+      border-color: rgba(255, 211, 123, 0.16);
+    }
+
+    .badge-archived {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--muted);
+    }
+
+    .keyword {
+      background: rgba(103, 184, 255, 0.11);
+      color: #d8ebff;
+      border: 1px solid rgba(103, 184, 255, 0.14);
+    }
+
+    form {
+      margin: 0;
+    }
+
+    form.inline {
+      display: inline-flex;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #bfd0de;
+      font-weight: 700;
+    }
+
+    input,
+    textarea,
+    button {
+      width: 100%;
+      font: inherit;
+      border-radius: 16px;
+      border: 1px solid var(--line-strong);
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    }
+
+    input,
+    textarea {
+      padding: 14px 16px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    textarea {
+      min-height: 132px;
+      resize: vertical;
+    }
+
+    input:focus,
+    textarea:focus {
+      outline: none;
+      border-color: rgba(115, 240, 194, 0.45);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    button {
+      min-height: 48px;
+      padding: 0 16px;
+      cursor: pointer;
+      font-weight: 800;
+      color: #041018;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      box-shadow: 0 14px 28px rgba(103, 184, 255, 0.16);
+    }
+
+    .ghost {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    .danger {
+      background: rgba(255, 155, 157, 0.14);
+      color: #ffd4d6;
+      box-shadow: none;
+    }
+
+    .empty {
+      padding: 22px;
+      border-radius: 22px;
+      color: var(--muted);
+      border: 1px dashed rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    @media (max-width: 1024px) {
+      .hero,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+
+      .panel {
+        padding: 18px;
+      }
+
+      h1 {
+        font-size: 42px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="panel">
+        <div class="eyebrow">Curadoria de Nichos</div>
+        <h1>Construa um catálogo de nichos com linguagem de produto, não de planilha.</h1>
+        <p class="subtitle">
+          A interface foi redesenhada para deixar mais claro o que está ativo, o que está pendente e o que precisa de decisão humana antes de entrar no motor heurístico.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="section-head" style="margin-bottom: 12px;">
+          <div>
+            <h2>Panorama</h2>
+            <p>Um resumo rápido do estado do seu catálogo editorial.</p>
+          </div>
+          <a class="nav-link" href="/">Voltar ao dashboard</a>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-box">
+            <strong>{{ active_niches|length }}</strong>
+            <span>nichos ativos</span>
+          </div>
+          <div class="summary-box">
+            <strong>{{ pending_niches|length }}</strong>
+            <span>sugestões pendentes</span>
+          </div>
+          <div class="summary-box">
+            <strong>{{ inactive_niches|length }}</strong>
+            <span>itens arquivados ou rejeitados</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {% if flash %}
+      <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+    {% endif %}
+
+    <div class="grid">
+      <div class="stack">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Nichos ativos</h2>
+              <p>Tudo o que está aqui já participa da detecção automática e influencia o score do motor heurístico.</p>
+            </div>
+          </div>
+
+          {% if active_niches %}
+            <div class="niche-list">
+              {% for niche in active_niches %}
+                <article class="niche-card">
+                  <div class="niche-head">
+                    <div>
+                      <h3 class="niche-name">{{ niche.name }}</h3>
+                      <div class="badge-row" style="margin-top: 10px;">
+                        <span class="badge badge-active">ativo</span>
+                        <span class="badge">{{ niche.source }}</span>
+                        <span class="badge">{{ niche.slug }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="muted">{{ niche.description or "Sem descrição." }}</p>
+                  <div class="keywords" style="margin-top: 14px;">
+                    {% for keyword in niche.keywords %}
+                      <span class="keyword">{{ keyword }}</span>
+                    {% endfor %}
+                  </div>
+                  {% if niche.slug != "geral" %}
+                  <div class="actions" style="margin-top: 16px;">
+                    <form class="inline" method="post" action="/nichos/{{ niche.slug }}/excluir">
+                      <button class="danger" type="submit">Excluir do motor</button>
+                    </form>
+                  </div>
+                  {% endif %}
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty">Nenhum nicho ativo encontrado.</div>
+          {% endif %}
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Sugestões pendentes</h2>
+              <p>A LLM sugere; a curadoria humana decide se o nicho entra ou não no motor.</p>
+            </div>
+          </div>
+
+          {% if pending_niches %}
+            <div class="niche-list">
+              {% for niche in pending_niches %}
+                <article class="niche-card">
+                  <div class="niche-head">
+                    <div>
+                      <h3 class="niche-name">{{ niche.name }}</h3>
+                      <div class="badge-row" style="margin-top: 10px;">
+                        <span class="badge badge-pending">pendente</span>
+                        <span class="badge">{{ niche.slug }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="muted">{{ niche.description or "Sem descrição sugerida." }}</p>
+                  {% if niche.llm_notes %}
+                    <p class="muted" style="margin-top: 10px;">Justificativa da LLM: {{ niche.llm_notes }}</p>
+                  {% endif %}
+                  <div class="keywords" style="margin-top: 14px;">
+                    {% for keyword in niche.keywords %}
+                      <span class="keyword">{{ keyword }}</span>
+                    {% endfor %}
+                  </div>
+                  <div class="actions" style="margin-top: 16px;">
+                    <form class="inline" method="post" action="/nichos/{{ niche.slug }}/aprovar">
+                      <button type="submit">Aprovar nicho</button>
+                    </form>
+                    <form class="inline" method="post" action="/nichos/{{ niche.slug }}/rejeitar">
+                      <button class="ghost" type="submit">Não aprovar</button>
+                    </form>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty">Nenhuma sugestão pendente no momento.</div>
+          {% endif %}
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Criar novo nicho</h2>
+              <p>Descreva o território editorial e deixe a LLM devolver uma proposta com descrição e palavras-chave.</p>
+            </div>
+          </div>
+
+          <form method="post" action="/nichos/sugerir" style="display: grid; gap: 14px;">
+            <div>
+              <label for="name">Nome do nicho</label>
+              <input id="name" name="name" type="text" placeholder="Ex.: empreendedorismo local" required />
+            </div>
+
+            <div>
+              <label for="description">Contexto opcional</label>
+              <textarea id="description" name="description" placeholder="Ex.: vídeos com dicas de vendas, fluxo de caixa, atendimento e crescimento de pequenos negócios."></textarea>
+            </div>
+
+            <button type="submit">Gerar sugestão com LLM</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Histórico</h2>
+              <p>Registro de nichos arquivados ou rejeitados para manter rastreabilidade editorial.</p>
+            </div>
+          </div>
+
+          {% if inactive_niches %}
+            <div class="niche-list">
+              {% for niche in inactive_niches %}
+                <article class="niche-card">
+                  <div class="niche-head">
+                    <div>
+                      <h3 class="niche-name">{{ niche.name }}</h3>
+                      <div class="badge-row" style="margin-top: 10px;">
+                        <span class="badge badge-archived">{{ niche.status }}</span>
+                        <span class="badge">{{ niche.source }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="muted">{{ niche.description or "Sem descrição." }}</p>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty">Nada arquivado ou rejeitado ainda.</div>
+          {% endif %}
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

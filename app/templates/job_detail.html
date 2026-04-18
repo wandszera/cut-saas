@@ -6,106 +6,353 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Job {{ job.id }} - Cut SaaS</title>
   <style>
+    :root {
+      --panel: rgba(12, 22, 34, 0.82);
+      --panel-soft: rgba(255, 255, 255, 0.03);
+      --line: rgba(157, 197, 224, 0.14);
+      --line-strong: rgba(157, 197, 224, 0.24);
+      --text: #eef5fb;
+      --muted: #8ea6ba;
+      --accent: #73f0c2;
+      --accent-2: #67b8ff;
+      --success: #95f2c8;
+      --danger: #ff9b9d;
+      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+      --font-body: "Manrope", "Segoe UI", sans-serif;
+      --radius-xl: 30px;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    }
+
     * {
       box-sizing: border-box;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: var(--font-body);
       margin: 0;
       padding: 24px;
-      background: #0a0a0a;
-      color: #e0e0e0;
+      background:
+        radial-gradient(circle at top left, rgba(103, 184, 255, 0.14), transparent 26%),
+        radial-gradient(circle at top right, rgba(255, 211, 123, 0.12), transparent 20%),
+        radial-gradient(circle at bottom right, rgba(115, 240, 194, 0.11), transparent 28%),
+        linear-gradient(180deg, #07121b 0%, #081018 100%);
+      color: var(--text);
       line-height: 1.6;
+    }
+
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
     }
 
     .header {
       display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 28px;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 28px;
+      border-radius: var(--radius-xl);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      flex-wrap: wrap;
     }
 
     .back-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 8px 12px;
-      background: #1a1a1a;
-      color: #72e0a6;
+      justify-content: center;
+      gap: 8px;
+      min-height: 46px;
+      padding: 0 16px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
       text-decoration: none;
-      border-radius: 8px;
-      border: 1px solid #2a2a2a;
-      font-size: 14px;
-      font-weight: 500;
+      border-radius: 999px;
+      border: 1px solid var(--line-strong);
+      font-size: 13px;
+      font-weight: 700;
       transition: all 0.2s ease;
     }
 
     .back-btn:hover {
-      background: #252525;
-      border-color: #72e0a6;
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(115, 240, 194, 0.35);
     }
 
     h1 {
       margin: 0;
-      font-size: 28px;
-      color: #fff;
+      font-family: var(--font-display);
+      font-size: clamp(30px, 4vw, 54px);
+      color: var(--text);
+      letter-spacing: -0.05em;
     }
 
     .card {
-      background: #1a1a1a;
+      background: var(--panel);
       padding: 24px;
-      border-radius: 12px;
+      border-radius: var(--radius-lg);
       margin-bottom: 24px;
-      border: 1px solid #2a2a2a;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .hero-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -60px -70px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(103, 184, 255, 0.18), transparent 70%);
+      filter: blur(12px);
+      pointer-events: none;
+    }
+
+    .title-stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .title-stack p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 18px;
+      align-items: start;
+      margin-top: 18px;
+    }
+
+    .hero-panel {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .hero-panel strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .hero-panel p {
+      margin: 0;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 0 0 24px;
+    }
+
+    .overview-card {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      overflow: hidden;
+    }
+
+    .overview-card strong {
+      display: block;
+      margin-bottom: 8px;
+      font-family: var(--font-display);
+      font-size: 32px;
+      letter-spacing: -0.05em;
+    }
+
+    .overview-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .flash-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      margin: 0 0 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      box-shadow: var(--shadow);
+      animation: flash-slide-in 220ms ease-out;
+      transition: opacity 180ms ease, transform 180ms ease, max-height 180ms ease, margin 180ms ease, padding 180ms ease;
+      max-height: 120px;
+      overflow: hidden;
+    }
+
+    .flash-banner.is-hiding {
+      opacity: 0;
+      transform: translateY(-6px);
+      max-height: 0;
+      margin-bottom: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-width: 0;
+    }
+
+    .flash-success {
+      border-color: rgba(149, 242, 200, 0.2);
+      background: rgba(149, 242, 200, 0.08);
+      color: #dffced;
+    }
+
+    .flash-error {
+      border-color: rgba(255, 155, 157, 0.2);
+      background: rgba(255, 155, 157, 0.08);
+      color: #ffe4e5;
+    }
+
+    .flash-banner strong {
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .flash-copy {
+      display: grid;
+      gap: 4px;
+      flex: 1 1 auto;
+    }
+
+    .flash-close {
+      min-height: 38px;
+      min-width: 38px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+      color: currentColor;
+      box-shadow: none;
+    }
+
+    .flash-close:hover {
+      transform: translateY(-1px);
+      box-shadow: none;
+    }
+
+    @keyframes flash-slide-in {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .section-intro {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .section-intro p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 720px;
+      font-size: 14px;
     }
 
     h2 {
       margin: 0 0 16px 0;
-      font-size: 20px;
-      color: #fff;
+      font-family: var(--font-display);
+      font-size: 28px;
+      color: var(--text);
+      letter-spacing: -0.04em;
     }
 
     h3 {
       margin: 16px 0 12px 0;
-      font-size: 16px;
-      color: #fff;
+      font-family: var(--font-display);
+      font-size: 20px;
+      color: var(--text);
+      letter-spacing: -0.03em;
     }
 
     p {
       margin: 8px 0;
-      color: #ccc;
+      color: #c7d6e4;
     }
 
     input, select, button {
       padding: 12px 14px;
-      border-radius: 8px;
-      border: 1px solid #333;
+      border-radius: 16px;
+      border: 1px solid var(--line-strong);
       font-size: 14px;
       transition: all 0.2s ease;
     }
 
     input, select {
-      background: #252525;
-      color: #fff;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+
+    select {
+      background: #1f2a36;
+      color: #eef5fb;
+      border-color: rgba(157, 197, 224, 0.3);
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+
+    select option {
+      background: #1f2a36;
+      color: #eef5fb;
     }
 
     input:focus, select:focus {
       outline: none;
-      border-color: #4da3ff;
-      background: #2a2a2a;
+      border-color: rgba(115, 240, 194, 0.45);
+      background: #243241;
     }
 
     input::placeholder {
-      color: #666;
+      color: #6f8496;
     }
 
     button {
       cursor: pointer;
-      background: linear-gradient(135deg, #4da3ff, #72e0a6);
-      color: #000;
-      font-weight: 600;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: #031018;
+      font-weight: 800;
       border: none;
+      box-shadow: 0 14px 24px rgba(103, 184, 255, 0.16);
     }
 
     button:hover {
@@ -118,14 +365,14 @@
     }
 
     a {
-      color: #72e0a6;
+      color: var(--accent);
       text-decoration: none;
-      font-weight: 500;
+      font-weight: 700;
       transition: color 0.2s ease;
     }
 
     a:hover {
-      color: #4da3ff;
+      color: var(--accent-2);
       text-decoration: underline;
     }
 
@@ -139,8 +386,9 @@
     }
 
     .status-pending {
-      background: #3a3a5c;
-      color: #b3d9ff;
+      background: rgba(103, 184, 255, 0.12);
+      color: #b2dbff;
+      border: 1px solid rgba(103, 184, 255, 0.18);
     }
 
     .status-downloading, .status-extracting_audio, .status-transcribing, 
@@ -151,13 +399,15 @@
     }
 
     .status-done {
-      background: #1f5131;
-      color: #d7ffe2;
+      background: rgba(149, 242, 200, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(149, 242, 200, 0.16);
     }
 
     .status-failed {
-      background: #5a2525;
-      color: #ffb3b3;
+      background: rgba(255, 155, 157, 0.12);
+      color: #ffd0d2;
+      border: 1px solid rgba(255, 155, 157, 0.16);
     }
 
     @keyframes pulse {
@@ -173,15 +423,15 @@
     }
 
     .meta-item {
-      background: #141414;
+      background: var(--panel-soft);
       padding: 12px;
-      border-radius: 10px;
-      border: 1px solid #2a2a2a;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .meta-item strong {
       display: block;
-      color: #fff;
+      color: var(--text);
       margin-bottom: 6px;
       font-size: 13px;
     }
@@ -199,11 +449,11 @@
     }
 
     .progress-section {
-      background: #141414;
+      background: var(--panel-soft);
       padding: 16px;
       border-radius: 10px;
       margin: 16px 0;
-      border: 1px solid #2a2a2a;
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .progress-bar {
@@ -217,7 +467,7 @@
 
     .progress-fill {
       height: 8px;
-      background: linear-gradient(90deg, #4da3ff, #72e0a6);
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
       transition: width 0.4s ease;
       border-radius: 10px;
     }
@@ -226,16 +476,16 @@
       display: flex;
       justify-content: space-between;
       font-size: 12px;
-      color: #888;
+      color: var(--muted);
     }
 
     .error-box {
-      background: #5a2525;
-      border: 1px solid #8a5555;
+      background: rgba(255, 155, 157, 0.1);
+      border: 1px solid rgba(255, 155, 157, 0.18);
       padding: 12px;
       border-radius: 8px;
       margin: 12px 0;
-      color: #ffb3b3;
+      color: #ffd1d3;
       font-size: 13px;
     }
 
@@ -247,10 +497,25 @@
       margin: 12px 0;
     }
 
+    .toolbar {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      overflow: hidden;
+    }
+
     .form-group > div {
       display: flex;
       flex-direction: column;
       gap: 4px;
+      min-width: 150px;
+      flex: 1 1 150px;
+    }
+
+    .toolbar button {
+      width: 100%;
     }
 
     .form-group label {
@@ -260,21 +525,71 @@
     }
 
     .candidate {
-      background: #141414;
-      padding: 16px;
-      border-radius: 10px;
-      margin-bottom: 12px;
-      border: 1px solid #2a2a2a;
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      padding: 18px;
+      border-radius: 22px;
+      margin-bottom: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       transition: all 0.2s ease;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .candidate-approved {
+      border-color: rgba(149, 242, 200, 0.24);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(149, 242, 200, 0.06);
+    }
+
+    .candidate-favorite {
+      border-color: rgba(255, 211, 123, 0.24);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(255, 211, 123, 0.08);
+    }
+
+    .candidate-divergent {
+      border-color: rgba(255, 155, 157, 0.24);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(255, 155, 157, 0.06);
     }
 
     .candidate:hover {
-      border-color: #3a3a3a;
-      background: #1a1a1a;
+      border-color: rgba(115, 240, 194, 0.26);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025));
+      transform: translateY(-1px);
     }
 
     .candidate-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
       margin-bottom: 12px;
+    }
+
+    .candidate-select {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .bulk-toolbar {
+      margin-bottom: 16px;
+    }
+
+    .bulk-toolbar select {
+      background: #1f2a36;
+      color: #eef5fb;
+      border-color: rgba(115, 240, 194, 0.35);
+    }
+
+    .bulk-toolbar select option {
+      background: #1f2a36;
+      color: #eef5fb;
+    }
+
+    .bulk-toolbar .accent-button {
+      color: #041018;
     }
 
     .candidate-number {
@@ -298,12 +613,16 @@
 
     .badge {
       display: inline-block;
-      padding: 4px 10px;
-      border-radius: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
       font-size: 11px;
-      background: #2a2a2a;
-      color: #aaa;
-      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.06);
+      color: #cdd9e3;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: 100%;
     }
 
     .badge-score-strong {
@@ -385,9 +704,9 @@
     }
 
     .metric-card {
-      background: #101010;
-      border: 1px solid #252525;
-      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
       padding: 10px 12px;
     }
 
@@ -440,14 +759,16 @@
     }
 
     .snippet {
-      background: #0a0a0a;
-      padding: 10px;
-      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 12px 14px;
+      border-radius: 14px;
       margin-top: 6px;
       font-size: 12px;
       line-height: 1.5;
-      color: #ccc;
+      color: #d5e2ed;
       border-left: 3px solid #4da3ff;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .candidate-actions {
@@ -464,10 +785,55 @@
       align-items: center;
     }
 
+    .candidate-actions form button {
+      box-shadow: none;
+    }
+
     .candidate-actions button, .candidate-actions a {
-      padding: 6px 10px;
+      padding: 10px 12px;
       font-size: 12px;
-      border-radius: 6px;
+      border-radius: 12px;
+      min-height: 40px;
+      text-decoration: none;
+    }
+
+    .ghost-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      min-height: 40px;
+      padding: 10px 12px;
+      cursor: pointer;
+      box-shadow: none;
+    }
+
+    .ghost-button:hover {
+      transform: translateY(-1px);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(115, 240, 194, 0.25);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .accent-button {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: #031018;
+    }
+
+    .warning-button {
+      background: linear-gradient(135deg, #ffd37b 0%, #ffb56f 100%);
+      color: #271500;
+    }
+
+    .danger-button {
+      background: linear-gradient(135deg, #ffb0b3 0%, #ff8f94 100%);
+      color: #2f060a;
     }
 
     .quick-adjust {
@@ -495,24 +861,36 @@
     }
 
     .clip {
-      background: #141414;
-      padding: 16px;
-      border-radius: 10px;
-      margin-bottom: 12px;
-      border: 1px solid #2a2a2a;
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      padding: 18px;
+      border-radius: 22px;
+      margin-bottom: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       transition: all 0.2s ease;
     }
 
+    .clip-ready {
+      border-color: rgba(149, 242, 200, 0.22);
+    }
+
+    .clip-published {
+      border-color: rgba(103, 184, 255, 0.24);
+    }
+
+    .clip .form-group button {
+      width: 100%;
+    }
+
     .clip:hover {
-      border-color: #3a3a3a;
-      background: #1a1a1a;
+      border-color: rgba(103, 184, 255, 0.28);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025));
     }
 
     .export-item {
-      background: #141414;
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1px solid #2a2a2a;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       margin-bottom: 12px;
     }
 
@@ -537,10 +915,10 @@
     }
 
     .step-item {
-      background: #141414;
-      padding: 16px;
-      border-radius: 10px;
-      border: 1px solid #2a2a2a;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .step-header {
@@ -613,10 +991,10 @@
     .empty-state {
       text-align: center;
       padding: 30px;
-      color: #666;
-      background: #141414;
-      border-radius: 10px;
-      border: 1px solid #2a2a2a;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 20px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
     }
 
     @media (max-width: 768px) {
@@ -635,6 +1013,11 @@
       }
 
       .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-meta,
+      .overview-grid {
         grid-template-columns: 1fr;
       }
 
@@ -666,21 +1049,52 @@
       .candidate-actions form button {
         width: 100%;
       }
+
+      .ghost-button {
+        width: 100%;
+      }
     }
   </style>
 </head>
 
 <body>
+  <div class="page">
+  {% if flash %}
+  <div id="flash-banner" data-level="{{ flash.level }}" class="flash-banner {% if flash.level == 'error' %}flash-error{% else %}flash-success{% endif %}">
+    <div class="flash-copy">
+      <strong>{% if flash.level == "error" %}Erro{% else %}Sucesso{% endif %}</strong>
+      <span>{{ flash.message }}</span>
+    </div>
+    <button type="button" class="flash-close" aria-label="Fechar aviso" onclick="dismissFlashBanner()">×</button>
+  </div>
+  {% endif %}
   <div class="header">
-    <a href="/" class="back-btn">← Voltar</a>
-    <h1>Job #{{ job.id }}</h1>
+    <a href="/" class="back-btn">< Voltar</a>
+    <div>
+      <h1>Job #{{ job.id }}</h1>
+      <p style="margin: 10px 0 0 0; color: var(--muted); max-width: 720px;">Painel editorial, pipeline tecnico e renderizacao no mesmo espaco de trabalho.</p>
+    </div>
   </div>
 
-  <div class="card">
+  <div class="card hero-card">
+    <div class="section-intro">
+      <div class="title-stack">
+        <h2 style="margin-bottom: 0;">Visao geral do job</h2>
+        <p>Uma leitura mais rapida do estado atual, dos ativos disponiveis e do que ja pode seguir para decisao editorial.</p>
+      </div>
+    </div>
     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
-      <div>
-        <p><strong>📝 Título:</strong> {{ job.title or "Sem título" }}</p>
-        <p><strong>📺 Fonte:</strong> {{ job.source_value }}</p>
+      <div style="flex: 1 1 520px;">
+        <div class="hero-meta">
+          <div class="hero-panel">
+            <strong>Titulo</strong>
+            <p>{{ job.title or "Sem titulo" }}</p>
+          </div>
+          <div class="hero-panel">
+            <strong>Fonte</strong>
+            <p>{{ job.source_value }}</p>
+          </div>
+        </div>
       </div>
       <div style="text-align: right;">
         <p style="margin: 0;"><strong>Status:</strong></p>
@@ -746,6 +1160,25 @@
     {% endif %}
   </div>
 
+  <div class="overview-grid">
+    <div class="overview-card">
+      <span>Candidatos</span>
+      <strong>{{ candidates|length }}</strong>
+    </div>
+    <div class="overview-card">
+      <span>Clips gerados</span>
+      <strong>{{ clips|length }}</strong>
+    </div>
+    <div class="overview-card">
+      <span>Pacotes exportados</span>
+      <strong>{{ exports|length }}</strong>
+    </div>
+    <div class="overview-card">
+      <span>Preset ativo</span>
+      <strong style="font-size: 24px;">{{ render_preset }}</strong>
+    </div>
+  </div>
+
 
 
   {% if job.status == "failed" %}
@@ -774,7 +1207,7 @@
           </div>
           <div>
             {% if step.status == "completed" %}
-            <span class="status-badge status-done">Concluida</span>
+            <span class="status-badge status-done">Conclu?da</span>
             {% elif step.status == "skipped" %}
             <span class="status-badge status-pending">Pulada</span>
             {% elif step.status == "running" %}
@@ -963,7 +1396,7 @@
 
   <div class="card">
     <h2>🔍 Análise</h2>
-    <form method="get" action="/jobs/{{ job.id }}/view" class="form-group">
+    <form method="get" action="/jobs/{{ job.id }}/view" class="form-group toolbar">
       <div>
         <label><strong>Formato</strong></label>
         <select name="mode">
@@ -1027,7 +1460,7 @@
     <h2>✂️ Render manual</h2>
     <p style="color: #888; font-size: 13px;">Preencha os tempos manualmente ou clique em um dos botões dos candidatos abaixo.</p>
 
-    <form method="post" action="/jobs/{{ job.id }}/view/render-manual" class="form-group">
+    <form method="post" action="/jobs/{{ job.id }}/view/render-manual" class="form-group toolbar">
       <div>
         <label for="start"><strong>Início (segundos)</strong></label>
         <input type="number" step="0.1" min="0" name="start" id="start" required>
@@ -1077,7 +1510,7 @@
     <h2>Fila editorial</h2>
     <p style="color: #888; font-size: 13px;">Aprove os melhores candidatos, marque favoritos e renderize o lote somente quando a seleção estiver pronta.</p>
     <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Preset ativo: <strong>{{ render_preset }}</strong></p>
-    <form method="post" action="/jobs/{{ job.id }}/view/render-approved" class="form-group">
+    <form method="post" action="/jobs/{{ job.id }}/view/render-approved" class="form-group toolbar">
       <input type="hidden" name="mode" value="{{ mode }}">
       <input type="hidden" name="render_preset" value="{{ render_preset }}">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -1096,18 +1529,46 @@
   </div>
 
   <div class="card">
-    <h2>🎬 Candidatos</h2>
+    <h2>Candidatos</h2>
     {% if candidates_missing %}
     <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: #2b2412; border: 1px solid #5c4a1e; color: #f6dea0;">
       Este video ainda nao tem candidatos persistidos para este modo. Use a acao de analisar para gerar os cortes sem travar a pagina.
     </div>
     {% endif %}
     {% if candidates %}
+      <form id="bulk-candidate-form" method="post" action="/jobs/{{ job.id }}/view/candidates/bulk" class="form-group toolbar bulk-toolbar">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <input type="hidden" name="render_preset" value="{{ render_preset }}">
+        <div>
+          <label><strong>Acao em lote</strong></label>
+          <select name="bulk_action">
+            <option value="approve">Aprovar selecionados</option>
+            <option value="reject">Rejeitar selecionados</option>
+            <option value="reset">Resetar selecionados</option>
+            <option value="favorite_on">Favoritar selecionados</option>
+            <option value="favorite_off">Desfavoritar selecionados</option>
+            <option value="render">Renderizar selecionados</option>
+          </select>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" name="burn_subtitles" value="true" id="bulk_subtitles">
+          <label for="bulk_subtitles" style="margin: 0;">Legenda no render em lote</label>
+        </div>
+        <div>
+          <button type="submit" class="accent-button">Aplicar nos selecionados</button>
+        </div>
+      </form>
       {% for candidate in candidates %}
-      <div class="candidate">
+      <div class="candidate{% if candidate.status == 'approved' %} candidate-approved{% endif %}{% if candidate.is_favorite %} candidate-favorite{% endif %}{% if candidate.divergence_score is not none and candidate.divergence_score >= 2 %} candidate-divergent{% endif %}">
         <div class="candidate-header">
-          <div class="candidate-number">#{{ loop.index0 }} — {{ candidate.time_range_label }}</div>
-          <div class="candidate-info">⏱️ Duração: {{ candidate.duration_mmss }}</div>
+          <div>
+            <div class="candidate-number">#{{ loop.index0 }} - {{ candidate.time_range_label }}</div>
+            <div class="candidate-info">Duracao: {{ candidate.duration_mmss }}</div>
+          </div>
+          <label class="candidate-select" for="candidate_bulk_{{ candidate.candidate_id }}">
+            <input form="bulk-candidate-form" id="candidate_bulk_{{ candidate.candidate_id }}" type="checkbox" name="candidate_ids" value="{{ candidate.candidate_id }}">
+            Selecionar
+          </label>
         </div>
 
         <div class="badge-row">
@@ -1241,19 +1702,19 @@
           <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
             <input type="hidden" name="mode" value="{{ mode }}">
             <input type="hidden" name="status" value="approved">
-            <button type="submit">Aprovar</button>
+            <button type="submit" class="accent-button">Aprovar</button>
           </form>
 
           <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
             <input type="hidden" name="mode" value="{{ mode }}">
             <input type="hidden" name="status" value="rejected">
-            <button type="submit">Rejeitar</button>
+            <button type="submit" class="danger-button">Rejeitar</button>
           </form>
 
           <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
             <input type="hidden" name="mode" value="{{ mode }}">
             <input type="hidden" name="status" value="pending">
-            <button type="submit">Resetar</button>
+            <button type="submit" class="ghost-button">Resetar</button>
           </form>
 
           <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/favorite">
@@ -1261,27 +1722,27 @@
             <button type="submit">{% if candidate.is_favorite %}Desfavoritar{% else %}Favoritar{% endif %}</button>
           </form>
 
-          <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end }}, '{{ mode }}')">
+          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end }}, '{{ mode }}')">
             📝 Usar no manual
           </button>
 
-          <button type="button" onclick="previewCandidateInOriginal({{ candidate.start }}, {{ candidate.end }})">
+          <button type="button" class="ghost-button" onclick="previewCandidateInOriginal({{ candidate.start }}, {{ candidate.end }})">
             👁️ Ver no original
           </button>
 
-          <button type="button" onclick="fillManualForm({{ candidate.start - 5 if candidate.start - 5 > 0 else 0 }}, {{ candidate.end }}, '{{ mode }}')">
+          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start - 5 if candidate.start - 5 > 0 else 0 }}, {{ candidate.end }}, '{{ mode }}')">
             ◀ -5s início
           </button>
 
-          <button type="button" onclick="fillManualForm({{ candidate.start + 5 }}, {{ candidate.end }}, '{{ mode }}')">
+          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start + 5 }}, {{ candidate.end }}, '{{ mode }}')">
             ▶ +5s início
           </button>
 
-          <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end - 5 if candidate.end - 5 > candidate.start else candidate.end }}, '{{ mode }}')">
+          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end - 5 if candidate.end - 5 > candidate.start else candidate.end }}, '{{ mode }}')">
             ◀ -5s fim
           </button>
 
-          <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end + 5 }}, '{{ mode }}')">
+          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end + 5 }}, '{{ mode }}')">
             ▶ +5s fim
           </button>
         </div>
@@ -1291,7 +1752,7 @@
           <label for="notes{{ candidate.candidate_id }}" style="font-size: 12px; color: #aaa;">Notas editoriais</label>
           <textarea id="notes{{ candidate.candidate_id }}" name="editorial_notes" placeholder="Ex.: bom gancho, mas ajustar início em 3s...">{{ candidate.editorial_notes }}</textarea>
           <div>
-            <button type="submit">Salvar nota</button>
+            <button type="submit" class="ghost-button">Salvar nota</button>
           </div>
         </form>
       </div>
@@ -1307,7 +1768,7 @@
     <h2>🎞️ Clips gerados</h2>
     {% if clips %}
       {% for clip in clips %}
-      <div class="clip">
+      <div class="clip{% if clip.publication_status == 'ready' %} clip-ready{% elif clip.publication_status == 'published' %} clip-published{% endif %}">
         <p style="margin: 0 0 8px 0;">
           <strong>Clip #{{ clip.id }}</strong>
           <span style="color: #888; font-size: 12px;">
@@ -1404,6 +1865,21 @@
   {% endif %}
 
   <script>
+    function dismissFlashBanner() {
+      const banner = document.getElementById("flash-banner");
+      if (!banner) return;
+      banner.classList.add("is-hiding");
+      window.setTimeout(() => banner.remove(), 220);
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const banner = document.getElementById("flash-banner");
+      if (!banner) return;
+      if (banner.dataset.level === "success") {
+        window.setTimeout(() => dismissFlashBanner(), 2800);
+      }
+    });
+
     function fillManualForm(start, end, mode) {
       const startInput = document.getElementById("start");
       const endInput = document.getElementById("end");
@@ -1474,6 +1950,7 @@
       }
     }
   </script>
+  </div>
 </body>
 
 </html>

@@ -134,8 +134,18 @@ CONTEXT_DEPENDENCY_PATTERNS = [
     "isso aqui",
     "isso ai",
     "isso aí",
+    "isso que eu falei",
+    "isso que eu mostrei",
+    "isso que aconteceu",
     "essa parte",
+    "essa ideia",
+    "essa cena",
     "esse trecho",
+    "esse ponto",
+    "esse caso",
+    "esse contexto",
+    "esse video",
+    "esse vídeo",
     "como eu falei",
     "como falei",
     "como eu disse",
@@ -143,8 +153,41 @@ CONTEXT_DEPENDENCY_PATTERNS = [
     "ali em cima",
     "aqui embaixo",
     "nessa tela",
+    "desse jeito",
+    "dessa forma",
     "olhando isso",
     "vendo isso",
+]
+
+INFORMATIVE_OPENING_PATTERNS = [
+    "hoje eu vou",
+    "hoje eu quero",
+    "nesse video",
+    "nesse vídeo",
+    "neste video",
+    "neste vídeo",
+    "eu quero falar",
+    "eu vou falar",
+    "vamos falar",
+    "vou comentar",
+    "vou te contar",
+    "eu estava pensando",
+]
+
+STRONG_OPENING_PATTERNS = [
+    "por que",
+    "o erro",
+    "o segredo",
+    "o problema",
+    "ninguém",
+    "quase todo mundo",
+    "a verdade",
+    "o maior",
+    "o pior",
+    "3 passos",
+    "três passos",
+    "3 erros",
+    "três erros",
 ]
 
 STRUCTURE_PATTERNS = [
@@ -215,6 +258,8 @@ def _duration_fit_score(duration: float, mode: str) -> tuple[float, str]:
         return -6.0, "fora da faixa ideal de short"
 
     diff = abs(duration - target)
+    if duration > 120:
+        return 0.5, "longo demais para short competitivo"
     if diff <= 15:
         return 5.0, "muito bem encaixado na duração alvo"
     if diff <= 30:
@@ -251,6 +296,39 @@ def _hook_score(opening_text: str, mode: str) -> tuple[float, list[str]]:
     if mode == "short" and words > 35:
         score -= 1.0
         reasons.append("abertura longa demais para short")
+
+    return score, reasons
+
+
+def _opening_strength_score(candidate: dict, mode: str) -> tuple[float, list[str]]:
+    opening = _normalize(candidate.get("opening_text", ""))
+    text = _normalize(candidate.get("text", ""))
+    score = 0.0
+    reasons = []
+
+    if any(opening.startswith(pattern) for pattern in INFORMATIVE_OPENING_PATTERNS):
+        score -= 1.8
+        reasons.append("abertura mais informativa do que forte")
+
+    if any(pattern in opening for pattern in STRONG_OPENING_PATTERNS):
+        score += 1.6
+        reasons.append("abertura com tensão ou promessa forte")
+
+    if opening.startswith(("ele ", "ela ", "isso ", "esse ", "essa ", "aí ", "ai ")) and not candidate.get("starts_clean"):
+        score -= 1.2
+        reasons.append("abertura depende de referência anterior")
+
+    if mode == "short" and _word_count(opening) >= 24 and "?" not in opening:
+        score -= 0.6
+        reasons.append("abertura demora para chegar no ponto")
+
+    if re.search(r"\b(mas|só que|so que|o problema|o erro)\b", opening):
+        score += 0.6
+        reasons.append("abertura cria contraste")
+
+    if re.search(r"\b(esse|essa|isso)\b", opening) and not re.search(r"\b(erro|problema|segredo|ponto|motivo|passo)\b", text):
+        score -= 0.7
+        reasons.append("abertura pouco autônoma")
 
     return score, reasons
 
@@ -482,6 +560,14 @@ def _context_dependency_penalty(candidate: dict) -> tuple[float, list[str]]:
         score -= 0.8
         reasons.append("abertura com transição contextual")
 
+    if not candidate.get("starts_clean") and opening.startswith(("ele ", "ela ", "eles ", "elas ", "isso ", "esse ", "essa ", "aqui ")):
+        score -= 1.0
+        reasons.append("começa sem referente claro")
+
+    if _word_count(opening) < 7 and not candidate.get("starts_clean"):
+        score -= 0.6
+        reasons.append("abertura curta demais para se sustentar sozinha")
+
     return score, reasons
 
 
@@ -646,6 +732,10 @@ def _score_candidate(
     total_score += hook_score * weights["hook"]
     reasons.extend(hook_reasons)
 
+    opening_strength_score, opening_strength_reasons = _opening_strength_score(candidate, mode)
+    total_score += opening_strength_score * weights["hook"]
+    reasons.extend(opening_strength_reasons)
+
     clarity_score, clarity_reasons = _clarity_score(text, opening_text, closing_text, mode)
     total_score += clarity_score * weights["clarity"]
     reasons.extend(clarity_reasons)
@@ -709,6 +799,7 @@ def _score_candidate(
 
     candidate_metrics = {
         "hook_score": hook_score,
+        "opening_strength_score": opening_strength_score,
         "clarity_score": clarity_score,
         "closure_score": closure_score,
         "emotion_score": emotion_score,
@@ -737,6 +828,7 @@ def _score_candidate(
         "score": round(total_score, 2),
         "reason": ", ".join(dict.fromkeys(reasons)),
         "hook_score": round(hook_score, 2),
+        "opening_strength_score": round(opening_strength_score, 2),
         "clarity_score": round(clarity_score, 2),
         "closure_score": round(closure_score, 2),
         "emotion_score": round(emotion_score, 2),
@@ -789,7 +881,21 @@ def _apply_diversity_reranking(candidates: list[dict], diversity_weight: float) 
         for candidate in remaining:
             max_overlap = max((_time_overlap_ratio(candidate, kept) for kept in selected), default=0.0)
             max_similarity = max((_text_similarity(candidate.get("text", ""), kept.get("text", "")) for kept in selected), default=0.0)
-            diversity_penalty = round((max_overlap * 2.8) + (max_similarity * 1.5), 2)
+            opening_similarity = max(
+                (
+                    _text_similarity(candidate.get("opening_text", ""), kept.get("opening_text", ""))
+                    for kept in selected
+                ),
+                default=0.0,
+            )
+            diversity_penalty = (max_overlap * 2.8) + (max_similarity * 1.5) + (opening_similarity * 1.2)
+            if max_overlap >= 0.7 and max_similarity >= 0.72:
+                diversity_penalty += 1.2
+            if opening_similarity >= 0.75:
+                diversity_penalty += 1.6
+            if max_overlap >= 0.7 and opening_similarity >= 0.75:
+                diversity_penalty += 1.6
+            diversity_penalty = round(diversity_penalty, 2)
             effective_score = candidate["base_score"] - (diversity_penalty * diversity_weight)
 
             if best_effective_score is None or effective_score > best_effective_score:

@@ -200,6 +200,177 @@ class ScoringTestCase(unittest.TestCase):
         self.assertLess(penalized["cta_penalty"], 0)
         self.assertIn("trecho dependente de contexto externo", penalized["reason"])
 
+    def test_score_candidates_prefers_tighter_short_over_long_short(self):
+        candidates = [
+            {
+                "start": 0.0,
+                "end": 88.0,
+                "duration": 88.0,
+                "text": "Por que esse erro destrói sua retenção e como corrigir isso em 3 passos sem perder clareza no final? Primeiro eu vou te mostrar onde quase todo mundo abre frio, depois como corrigir sem enrolar, e no fim qual detalhe muda a resposta do público.",
+                "opening_text": "Por que esse erro destrói sua retenção",
+                "middle_text": "Primeiro eu vou te mostrar onde quase todo mundo abre frio e depois como corrigir sem enrolar",
+                "closing_text": "e no fim qual detalhe muda a resposta do público.",
+                "segments_count": 4,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+            {
+                "start": 100.0,
+                "end": 235.0,
+                "duration": 135.0,
+                "text": "Por que esse erro destrói sua retenção e como corrigir isso em 3 passos sem perder clareza no final, com mais voltas e exemplos extras que deixam o short mais arrastado.",
+                "opening_text": "Por que esse erro destrói sua retenção",
+                "middle_text": "e como corrigir isso em 3 passos sem perder clareza",
+                "closing_text": "com mais voltas e exemplos extras que deixam o short mais arrastado.",
+                "segments_count": 4,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+        ]
+
+        ranked = score_candidates(candidates, mode="short", niche="geral")
+
+        self.assertEqual(ranked[0]["start"], 0.0)
+        long_short = next(item for item in ranked if item["start"] == 100.0)
+        self.assertLess(long_short["duration_fit_score"], ranked[0]["duration_fit_score"])
+        self.assertIn("short competitivo", long_short["reason"])
+
+    def test_score_candidates_rewards_strong_opening_over_informative_setup(self):
+        candidates = [
+            {
+                "start": 0.0,
+                "end": 72.0,
+                "duration": 72.0,
+                "text": "Hoje eu vou falar sobre liberdade financeira e trazer algumas reflexões iniciais antes de entrar nos detalhes.",
+                "opening_text": "Hoje eu vou falar sobre liberdade financeira",
+                "middle_text": "e trazer algumas reflexões iniciais",
+                "closing_text": "antes de entrar nos detalhes.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+            {
+                "start": 80.0,
+                "end": 152.0,
+                "duration": 72.0,
+                "text": "Por que quase todo mundo trava na liberdade financeira? O erro está na ordem das decisões, e no fim esse é o ponto.",
+                "opening_text": "Por que quase todo mundo trava na liberdade financeira?",
+                "middle_text": "O erro está na ordem das decisões",
+                "closing_text": "e no fim esse é o ponto.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+        ]
+
+        ranked = score_candidates(candidates, mode="short", niche="geral")
+
+        self.assertEqual(ranked[0]["start"], 80.0)
+        informative = next(item for item in ranked if item["start"] == 0.0)
+        strong = ranked[0]
+        self.assertLess(informative["opening_strength_score"], strong["opening_strength_score"])
+        self.assertIn("abertura mais informativa do que forte", informative["reason"])
+
+    def test_score_candidates_penalizes_context_insufficient_opening(self):
+        candidates = [
+            {
+                "start": 0.0,
+                "end": 66.0,
+                "duration": 66.0,
+                "text": "Esse ponto aqui mostra exatamente o que eu te falei antes, e é por isso que isso funciona.",
+                "opening_text": "Esse ponto aqui mostra exatamente",
+                "middle_text": "o que eu te falei antes",
+                "closing_text": "e é por isso que isso funciona.",
+                "segments_count": 3,
+                "pause_before": 0.0,
+                "pause_after": 0.4,
+                "starts_clean": False,
+                "ends_clean": True,
+            },
+            {
+                "start": 70.0,
+                "end": 136.0,
+                "duration": 66.0,
+                "text": "O erro aqui é começar pelo tático antes da estratégia, e por isso quase todo mundo perde tempo.",
+                "opening_text": "O erro aqui é começar pelo tático antes da estratégia",
+                "middle_text": "e por isso quase todo mundo perde tempo",
+                "closing_text": "perde tempo.",
+                "segments_count": 3,
+                "pause_before": 0.4,
+                "pause_after": 0.4,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+        ]
+
+        ranked = score_candidates(candidates, mode="short", niche="geral")
+
+        self.assertEqual(ranked[0]["start"], 70.0)
+        dependent = next(item for item in ranked if item["start"] == 0.0)
+        self.assertLess(dependent["context_penalty"], -1.0)
+        self.assertIn("começa sem referente claro", dependent["reason"])
+
+    def test_score_candidates_penalizes_same_opening_redundancy_more_aggressively(self):
+        candidates = [
+            {
+                "start": 0.0,
+                "end": 68.0,
+                "duration": 68.0,
+                "text": "O erro que destrói sua retenção aparece logo no começo e eu vou te mostrar como resolver isso com clareza.",
+                "opening_text": "O erro que destrói sua retenção aparece logo no começo",
+                "middle_text": "e eu vou te mostrar como resolver isso",
+                "closing_text": "com clareza.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+            {
+                "start": 10.0,
+                "end": 78.0,
+                "duration": 68.0,
+                "text": "O erro que destrói sua retenção aparece logo no começo, e aqui eu aprofundo quase o mesmo argumento com poucas mudanças.",
+                "opening_text": "O erro que destrói sua retenção aparece logo no começo",
+                "middle_text": "e aqui eu aprofundo quase o mesmo argumento",
+                "closing_text": "com poucas mudanças.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+            {
+                "start": 90.0,
+                "end": 158.0,
+                "duration": 68.0,
+                "text": "Três sinais mostram que seu conteúdo abre frio demais, e o terceiro é o que mais derruba retenção.",
+                "opening_text": "Três sinais mostram que seu conteúdo abre frio demais",
+                "middle_text": "e o terceiro é o que mais derruba retenção",
+                "closing_text": "derruba retenção.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+        ]
+
+        ranked = score_candidates(candidates, mode="short", niche="geral")
+
+        self.assertIn(ranked[0]["start"], (0.0, 10.0))
+        self.assertEqual(ranked[1]["start"], 90.0)
+        redundant = next(item for item in ranked if item["start"] == 10.0)
+        self.assertGreater(redundant["diversity_penalty"], 4.0)
+
     def test_rerank_candidates_if_enabled_uses_llm_without_breaking_fallback(self):
         candidates = [
             {"start": 0.0, "score": 8.0, "base_score": 8.0, "reason": "base", "text": "a", "opening_text": "a", "closing_text": "a", "duration": 60.0},

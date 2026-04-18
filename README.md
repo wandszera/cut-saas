@@ -11,6 +11,7 @@ Aplicacao local em FastAPI para baixar videos do YouTube, transcrever o audio, s
 - detecta um nicho do conteudo;
 - gera janelas candidatas para cortes;
 - pontua os candidatos com heuristicas de gancho, clareza, fechamento, emocao e duracao;
+- reranqueia candidatos com foco editorial para priorizar shorts mais enxutos, menos redundantes e com abertura mais forte;
 - renderiza clips com `ffmpeg`;
 - opcionalmente gera e queima legendas;
 - oferece interface web simples e endpoints HTTP.
@@ -53,6 +54,26 @@ Estados tipicos do job:
 `pending -> downloading -> extracting_audio -> transcribing -> analyzing -> done`
 
 Em caso de falha, o job vai para `failed` e registra `error_message`.
+
+## Qualidade editorial da analise
+
+A etapa de analise dos candidatos combina segmentacao com heuristicas editoriais para melhorar a qualidade dos cortes sugeridos.
+
+Hoje o ranking considera especialmente:
+
+- aderencia de duracao ao formato `short` ou `long`;
+- forca da abertura, distinguindo gancho real de abertura apenas informativa;
+- clareza de inicio e fechamento;
+- dependencia de contexto anterior, para evitar trechos que nao se sustentam sozinhos;
+- diversidade entre candidatos, reduzindo cortes muito parecidos entre si;
+- sinais de impacto, estrutura e densidade informacional.
+
+Na pratica, isso ajuda o sistema a:
+
+- reduzir cortes longos demais para `short`;
+- evitar repeticao de candidatos com a mesma abertura;
+- subir trechos com tensao, promessa, pergunta ou contraste logo no inicio;
+- filtrar melhor segmentos que dependem demais do contexto anterior.
 
 ## Requisitos
 

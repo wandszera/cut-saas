@@ -17,21 +17,33 @@ from app.schemas.job import (
     JobCreateYouTube,
     JobResponse,
     ManualRenderRequest,
+    NicheCreateRequest,
     RenderCandidateRequest,
     RenderRequest,
 )
 from app.services.candidates import get_candidates_for_job, regenerate_candidates_for_job
 from app.services.audio import extract_audio_from_video
-from app.services.clipping import render_clip
-from app.services.editorial import build_editorial_package
 from app.services.exports import build_job_export_bundle, list_job_export_bundles
 from app.services.niche_learning import (
     get_feedback_profile_for_niche,
     get_learned_keywords_for_niche,
     learn_keywords_for_niche,
 )
-from app.services.niche_registry import get_niche_profile
+from app.services.niche_registry import (
+    approve_niche,
+    archive_niche,
+    create_pending_niche,
+    get_niche_profile,
+    list_niche_definitions,
+    reject_niche,
+)
 from app.services.render_presets import list_render_presets
+from app.services.render_workflow import (
+    render_candidate_clip,
+    render_manual_clip as execute_manual_render,
+    render_ranked_candidate_clip,
+)
+from app.services.serializers import serialize_candidate, serialize_clip
 from app.services.pipeline import (
     MAX_STEP_ATTEMPTS,
     get_exhausted_steps,
@@ -42,7 +54,6 @@ from app.services.pipeline import (
 )
 from app.services.scoring import score_candidates
 from app.services.segmentation import build_candidate_windows, load_segments
-from app.services.subtitles import generate_ass_for_clip
 from app.services.transcription import transcribe_audio
 from app.services.youtube import download_youtube_media
 from app.utils.media_urls import build_static_url
@@ -78,6 +89,12 @@ def _normalize_pipeline_step(step_name: str) -> str:
         return validate_step_name(step_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _niche_service_error(exc: ValueError) -> HTTPException:
+    detail = str(exc)
+    status_code = 404 if "não encontrado" in detail.lower() or "nao encontrado" in detail.lower() else 400
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 def _ensure_job_ready_for_render(job: Job) -> None:
@@ -363,8 +380,9 @@ def _build_ranking_insights_payload(
 
 
 def _build_api_candidate_payload(candidate, feedback_profile: dict | None = None) -> dict:
-    heuristic_score = float(getattr(candidate, "heuristic_score", 0.0) or 0.0)
-    llm_score_raw = getattr(candidate, "llm_score", None)
+    base_payload = serialize_candidate(candidate)
+    heuristic_score = float(base_payload.get("heuristic_score", 0.0) or 0.0)
+    llm_score_raw = base_payload.get("llm_score")
     llm_score = round(float(llm_score_raw), 2) if llm_score_raw is not None else None
     divergence_score = (
         round(abs(heuristic_score - llm_score), 2)
@@ -412,80 +430,12 @@ def _build_api_candidate_payload(candidate, feedback_profile: dict | None = None
             )
 
     return {
-        "candidate_id": candidate.id,
-        "start": candidate.start_time,
-        "end": candidate.end_time,
-        "duration": candidate.duration,
-        "heuristic_score": getattr(candidate, "heuristic_score", None),
-        "score": candidate.score,
-        "reason": candidate.reason,
-        "opening_text": candidate.opening_text,
-        "closing_text": candidate.closing_text,
-        "text": candidate.full_text,
-        "hook_score": candidate.hook_score,
-        "clarity_score": candidate.clarity_score,
-        "closure_score": candidate.closure_score,
-        "emotion_score": candidate.emotion_score,
-        "duration_fit_score": candidate.duration_fit_score,
-        "transcript_context_score": getattr(candidate, "transcript_context_score", None),
-        "llm_score": getattr(candidate, "llm_score", None),
-        "llm_why": getattr(candidate, "llm_why", None),
-        "llm_title": getattr(candidate, "llm_title", None),
-        "llm_hook": getattr(candidate, "llm_hook", None),
-        "status": candidate.status,
-        "is_favorite": getattr(candidate, "is_favorite", False),
-        "editorial_notes": getattr(candidate, "editorial_notes", None),
+        **base_payload,
+        "llm_score": llm_score_raw,
         "divergence_score": divergence_score,
         "divergence_label": divergence_label,
         "divergence_summary": divergence_summary,
         "adaptive_blend_explanation": adaptive_blend_explanation,
-    }
-
-
-def _build_clip_payload(
-    *,
-    job: Job,
-    source: str,
-    mode: str,
-    start: float,
-    end: float,
-    duration: float,
-    score: float | None,
-    reason: str | None,
-    text: str | None,
-    subtitles_burned: bool,
-    output_path: str,
-    render_preset: str,
-) -> dict:
-    editorial = build_editorial_package(
-        job_title=job.title,
-        niche=job.detected_niche,
-        mode=mode,
-        clip_id=None,
-        start=start,
-        end=end,
-        text=text,
-        reason=reason,
-        render_preset=render_preset,
-    )
-    return {
-        "job_id": job.id,
-        "source": source,
-        "mode": mode,
-        "start_time": start,
-        "end_time": end,
-        "duration": duration,
-        "score": score,
-        "reason": reason,
-        "text": text,
-        "headline": editorial["headline"],
-        "description": editorial["description"],
-        "hashtags": editorial["hashtags"],
-        "suggested_filename": editorial["suggested_filename"],
-        "render_preset": render_preset,
-        "publication_status": "draft",
-        "subtitles_burned": subtitles_burned,
-        "output_path": output_path,
     }
 
 
@@ -499,6 +449,74 @@ def get_render_presets():
     return {
         "default": "clean",
         "presets": list_render_presets(),
+    }
+
+
+@router.get("/niches")
+def get_niches(include_inactive: bool = True, db: Session = Depends(get_db)):
+    niches = list_niche_definitions(db, include_inactive=include_inactive)
+    return {
+        "total_niches": len(niches),
+        "active_count": sum(1 for niche in niches if niche["status"] == "active"),
+        "pending_count": sum(1 for niche in niches if niche["status"] == "pending"),
+        "inactive_count": sum(1 for niche in niches if niche["status"] in {"archived", "rejected"}),
+        "niches": niches,
+    }
+
+
+@router.post("/niches")
+def create_niche(payload: NicheCreateRequest, db: Session = Depends(get_db)):
+    try:
+        niche = create_pending_niche(
+            db,
+            name=payload.name,
+            description=payload.description,
+        )
+    except ValueError as exc:
+        raise _niche_service_error(exc) from exc
+
+    return {
+        "message": "Nicho criado como pendente",
+        "niche": niche,
+    }
+
+
+@router.post("/niches/{slug}/approve")
+def approve_niche_endpoint(slug: str, db: Session = Depends(get_db)):
+    try:
+        niche = approve_niche(db, slug)
+    except ValueError as exc:
+        raise _niche_service_error(exc) from exc
+
+    return {
+        "message": "Nicho aprovado com sucesso",
+        "niche": niche,
+    }
+
+
+@router.post("/niches/{slug}/reject")
+def reject_niche_endpoint(slug: str, db: Session = Depends(get_db)):
+    try:
+        niche = reject_niche(db, slug)
+    except ValueError as exc:
+        raise _niche_service_error(exc) from exc
+
+    return {
+        "message": "Nicho rejeitado com sucesso",
+        "niche": niche,
+    }
+
+
+@router.post("/niches/{slug}/archive")
+def archive_niche_endpoint(slug: str, db: Session = Depends(get_db)):
+    try:
+        niche = archive_niche(db, slug)
+    except ValueError as exc:
+        raise _niche_service_error(exc) from exc
+
+    return {
+        "message": "Nicho arquivado com sucesso",
+        "niche": niche,
     }
 
 
@@ -722,28 +740,14 @@ def render_top_clips(job_id: int, payload: RenderRequest, db: Session = Depends(
     rendered = []
 
     for index, clip in enumerate(top_clips):
-        subtitles_path = None
-        if payload.burn_subtitles:
-            subtitles_path = generate_ass_for_clip(
-                transcript_path=job.transcript_path,
-                job_id=job.id,
-                clip_index=index,
-                clip_start=clip["start"],
-                clip_end=clip["end"],
-                mode=mode,
-                render_preset=payload.render_preset,
-            )
-
-        output_path = render_clip(
-            video_path=job.video_path,
-            job_id=job.id,
-            clip_index=index,
-            start=clip["start"],
-            end=clip["end"],
+        _rendered_clip, subtitles_path, output_path = render_ranked_candidate_clip(
+            db=db,
+            job=job,
+            candidate=clip,
             mode=mode,
             burn_subtitles=payload.burn_subtitles,
-            subtitles_path=subtitles_path,
             render_preset=payload.render_preset,
+            clip_index=index,
         )
 
         rendered.append(
@@ -966,50 +970,13 @@ def render_candidate_by_id(
 
     _ensure_job_ready_for_render(job)
 
-    subtitles_path = None
-    if burn_subtitles:
-        subtitles_path = generate_ass_for_clip(
-            transcript_path=job.transcript_path,
-            job_id=job.id,
-            clip_index=candidate.id,
-            clip_start=candidate.start_time,
-            clip_end=candidate.end_time,
-            mode=candidate.mode,
-            render_preset="clean",
-        )
-
-    output_path = render_clip(
-        video_path=job.video_path,
-        job_id=job.id,
-        clip_index=candidate.id,
-        start=candidate.start_time,
-        end=candidate.end_time,
-        mode=candidate.mode,
+    clip, _subtitles_path, output_path = render_candidate_clip(
+        db=db,
+        job=job,
+        candidate=candidate,
         burn_subtitles=burn_subtitles,
-        subtitles_path=subtitles_path,
         render_preset="clean",
     )
-
-    clip = Clip(
-        **_build_clip_payload(
-            job=job,
-            source="candidate",
-            mode=candidate.mode,
-            start=candidate.start_time,
-            end=candidate.end_time,
-            duration=candidate.duration,
-            score=candidate.score,
-            reason=candidate.reason,
-            text=candidate.full_text,
-            subtitles_burned=burn_subtitles,
-            output_path=output_path,
-            render_preset="clean",
-        )
-    )
-    db.add(clip)
-
-    candidate.status = "rendered"
-
     db.commit()
     db.refresh(clip)
 
@@ -1049,47 +1016,15 @@ def render_candidate(job_id: int, payload: RenderCandidateRequest, db: Session =
 
     candidate = ranked[payload.candidate_index]
 
-    subtitles_path = None
-    if payload.burn_subtitles:
-        subtitles_path = generate_ass_for_clip(
-            transcript_path=job.transcript_path,
-            job_id=job.id,
-            clip_index=payload.candidate_index,
-            clip_start=candidate["start"],
-            clip_end=candidate["end"],
-            mode=mode,
-            render_preset=payload.render_preset,
-        )
-
-    output_path = render_clip(
-        video_path=job.video_path,
-        job_id=job.id,
-        clip_index=payload.candidate_index,
-        start=candidate["start"],
-        end=candidate["end"],
+    clip, subtitles_path, output_path = render_ranked_candidate_clip(
+        db=db,
+        job=job,
+        candidate=candidate,
         mode=mode,
         burn_subtitles=payload.burn_subtitles,
-        subtitles_path=subtitles_path,
         render_preset=payload.render_preset,
+        clip_index=payload.candidate_index,
     )
-
-    clip = Clip(
-        **_build_clip_payload(
-            job=job,
-            source="candidate",
-            mode=mode,
-            start=candidate["start"],
-            end=candidate["end"],
-            duration=candidate["duration"],
-            score=candidate.get("score"),
-            reason=candidate.get("reason"),
-            text=candidate.get("text"),
-            subtitles_burned=payload.burn_subtitles,
-            output_path=output_path,
-            render_preset=payload.render_preset,
-        )
-    )
-    db.add(clip)
     db.commit()
     db.refresh(clip)
 
@@ -1251,48 +1186,13 @@ def render_approved_candidates(
     rendered = []
 
     for candidate in approved_candidates:
-        subtitles_path = None
-        if burn_subtitles:
-            subtitles_path = generate_ass_for_clip(
-                transcript_path=job.transcript_path,
-                job_id=job.id,
-                clip_index=candidate.id,
-                clip_start=candidate.start_time,
-                clip_end=candidate.end_time,
-                mode=candidate.mode,
-                render_preset=render_preset,
-            )
-
-        output_path = render_clip(
-            video_path=job.video_path,
-            job_id=job.id,
-            clip_index=candidate.id,
-            start=candidate.start_time,
-            end=candidate.end_time,
-            mode=candidate.mode,
+        clip, _subtitles_path, output_path = render_candidate_clip(
+            db=db,
+            job=job,
+            candidate=candidate,
             burn_subtitles=burn_subtitles,
-            subtitles_path=subtitles_path,
             render_preset=render_preset,
         )
-
-        clip = Clip(
-            **_build_clip_payload(
-                job=job,
-                source="candidate",
-                mode=candidate.mode,
-                start=candidate.start_time,
-                end=candidate.end_time,
-                duration=candidate.duration,
-                score=candidate.score,
-                reason=candidate.reason,
-                text=candidate.full_text,
-                subtitles_burned=burn_subtitles,
-                output_path=output_path,
-                render_preset=render_preset,
-            )
-        )
-        db.add(clip)
-
         candidate.status = "rendered"
         rendered.append(
             {
@@ -1328,48 +1228,17 @@ def render_manual_clip(job_id: int, payload: ManualRenderRequest, db: Session = 
         raise HTTPException(status_code=400, detail="end deve ser maior que start")
 
     duration = round(payload.end - payload.start, 2)
-
-    subtitles_path = None
-    if payload.burn_subtitles:
-        subtitles_path = generate_ass_for_clip(
-            transcript_path=job.transcript_path,
-            job_id=job.id,
-            clip_index=9999,
-            clip_start=payload.start,
-            clip_end=payload.end,
-            mode=mode,
-            render_preset=payload.render_preset,
-        )
-
-    output_path = render_clip(
-        video_path=job.video_path,
-        job_id=job.id,
-        clip_index=9999,
+    clip, subtitles_path, output_path = execute_manual_render(
+        db=db,
+        job=job,
         start=payload.start,
         end=payload.end,
         mode=mode,
         burn_subtitles=payload.burn_subtitles,
-        subtitles_path=subtitles_path,
         render_preset=payload.render_preset,
+        clip_index=9999,
+        reason="Render manual",
     )
-
-    clip = Clip(
-        **_build_clip_payload(
-            job=job,
-            source="manual",
-            mode=mode,
-            start=payload.start,
-            end=payload.end,
-            duration=duration,
-            score=None,
-            reason="Render manual",
-            text=None,
-            subtitles_burned=payload.burn_subtitles,
-            output_path=output_path,
-            render_preset=payload.render_preset,
-        )
-    )
-    db.add(clip)
     db.commit()
     db.refresh(clip)
 
@@ -1411,27 +1280,7 @@ def list_rendered_clips(job_id: int, db: Session = Depends(get_db)):
         "title": job.title,
         "total_clips": len(clips),
         "clips": [
-            {
-                "clip_id": clip.id,
-                "source": clip.source,
-                "mode": clip.mode,
-                "format": "9:16" if clip.mode == "short" else "16:9",
-                "start": clip.start_time,
-                "end": clip.end_time,
-                "duration": clip.duration,
-                "score": clip.score,
-                "reason": clip.reason,
-                "headline": clip.headline,
-                "description": clip.description,
-                "hashtags": clip.hashtags,
-                "suggested_filename": clip.suggested_filename,
-                "render_preset": clip.render_preset,
-                "publication_status": clip.publication_status,
-                "subtitles_burned": clip.subtitles_burned,
-                "output_path": clip.output_path,
-                "output_url": build_static_url(clip.output_path),
-                "created_at": clip.created_at,
-            }
+            serialize_clip(clip)
             for clip in clips
         ],
     }

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Status do Sistema - Cut SaaS</title>
+  <style>
+    :root {
+      --panel: rgba(12, 22, 34, 0.82);
+      --line: rgba(157, 197, 224, 0.14);
+      --line-strong: rgba(157, 197, 224, 0.24);
+      --text: #eef5fb;
+      --muted: #8ea6ba;
+      --accent: #73f0c2;
+      --accent-2: #67b8ff;
+      --success: #95f2c8;
+      --danger: #ff9b9d;
+      --warn: #ffd37b;
+      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+      --font-body: "Manrope", "Segoe UI", sans-serif;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: var(--font-body);
+      background:
+        radial-gradient(circle at top left, rgba(103, 184, 255, 0.14), transparent 26%),
+        radial-gradient(circle at top right, rgba(255, 211, 123, 0.12), transparent 20%),
+        radial-gradient(circle at bottom right, rgba(115, 240, 194, 0.11), transparent 28%),
+        linear-gradient(180deg, #07121b 0%, #081018 100%);
+      padding: 24px;
+    }
+
+    .shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      border-radius: 28px;
+      padding: 24px;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--warn);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    h1, h2, h3 {
+      font-family: var(--font-display);
+      letter-spacing: -0.04em;
+    }
+
+    h1 {
+      margin: 18px 0 12px;
+      font-size: clamp(38px, 5vw, 64px);
+      line-height: 0.95;
+      max-width: 720px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0;
+      color: #c8d7e3;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: flex-end;
+    }
+
+    .link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .summary-grid,
+    .settings-grid,
+    .checks-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .summary-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .checks-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .settings-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .card strong {
+      display: block;
+      font-size: 32px;
+      margin-bottom: 4px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+
+    .status-ok { background: rgba(149, 242, 200, 0.12); color: var(--success); border: 1px solid rgba(149, 242, 200, 0.16); }
+    .status-erro { background: rgba(255, 155, 157, 0.12); color: #ffd0d2; border: 1px solid rgba(255, 155, 157, 0.16); }
+    .status-configurado { background: rgba(103, 184, 255, 0.12); color: #b2dbff; border: 1px solid rgba(103, 184, 255, 0.16); }
+    .status-incompleto { background: rgba(255, 211, 123, 0.12); color: #ffe6b8; border: 1px solid rgba(255, 211, 123, 0.16); }
+
+    .item-title {
+      font-size: 20px;
+      margin: 0 0 8px;
+    }
+
+    .detail {
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-end;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 960px) {
+      .hero,
+      .summary-grid,
+      .checks-grid,
+      .settings-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="panel">
+        <div class="eyebrow">Diagnóstico Operacional</div>
+        <h1>Sua base está pronta para uso real?</h1>
+        <p>
+          Esta tela resume o estado do ambiente local, diretórios, banco, runtime e provider de IA para reduzir surpresa antes de operar o sistema no dia a dia.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="top-actions">
+          <a class="link" href="/">Voltar ao dashboard</a>
+          <a class="link" href="/nichos">Gerenciar nichos</a>
+        </div>
+        <div style="margin-top: 18px;">
+          {% if diagnostics.overall_ok %}
+            <div class="status status-ok">Sistema pronto</div>
+          {% else %}
+            <div class="status status-erro">Ajustes pendentes</div>
+          {% endif %}
+          <p>Use este painel antes do primeiro uso real ou quando algo parecer inconsistente no pipeline.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Resumo</h2>
+      <div class="summary-grid">
+        <div class="card">
+          <strong>{{ diagnostics.summary.checks_ok }}/{{ diagnostics.summary.checks_total }}</strong>
+          <span class="label">checks técnicos ok</span>
+        </div>
+        <div class="card">
+          <strong>{{ diagnostics.summary.directories_ok }}/{{ diagnostics.summary.directories_total }}</strong>
+          <span class="label">diretórios disponíveis</span>
+        </div>
+        <div class="card">
+          <strong>{{ diagnostics.settings_snapshot.whisper_model }}</strong>
+          <span class="label">modelo de transcrição</span>
+        </div>
+        <div class="card">
+          <strong>{{ diagnostics.settings_snapshot.llm_provider }}</strong>
+          <span class="label">provider LLM</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Checks do ambiente</h2>
+        <p style="max-width: 520px;">Estes itens indicam se a base técnica mínima está configurada para download, transcrição, análise e persistência.</p>
+      </div>
+      <div class="checks-grid">
+        {% for item in diagnostics.checks %}
+        <article class="card">
+          <div class="status status-{{ item.status }}">{{ item.status }}</div>
+          <h3 class="item-title">{{ item.name }}</h3>
+          <div class="detail">{{ item.detail }}</div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Diretórios</h2>
+        <p style="max-width: 520px;">Confirmação rápida da estrutura esperada para downloads, transcrições, clips, temporários, exports e uploads.</p>
+      </div>
+      <div class="checks-grid">
+        {% for item in diagnostics.directories %}
+        <article class="card">
+          <div class="status status-{{ item.status }}">{{ item.status }}</div>
+          <h3 class="item-title">{{ item.name }}</h3>
+          <div class="detail">{{ item.detail }}</div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Configuração carregada</h2>
+        <p style="max-width: 520px;">Snapshot enxuto dos parâmetros principais em uso pelo backend neste momento.</p>
+      </div>
+      <div class="settings-grid">
+        {% for key, value in diagnostics.settings_snapshot.items() %}
+        <article class="card">
+          <h3 class="item-title" style="font-size: 18px;">{{ key }}</h3>
+          <div class="detail">{{ value }}</div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</body>
+</html>

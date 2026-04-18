@@ -43,6 +43,11 @@ class CandidateNotesRequest(BaseModel):
     editorial_notes: str = ""
 
 
+class NicheCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
 class JobResponse(BaseModel):
     id: int
     source_type: str
