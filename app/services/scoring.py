@@ -19,12 +19,16 @@ DEFAULT_WEIGHTS = {
     "repetition_penalty": 1.0,
     "diversity_penalty": 1.0,
     "feedback_alignment": 1.0,
+    "context_penalty": 1.0,
+    "structure_bonus": 1.0,
+    "cta_penalty": 1.0,
+    "transcript_context": 1.0,
 }
 
 
-def _get_niche_weights(niche: str | None) -> dict:
+def _get_niche_weights(niche: str | None, niche_profile: dict | None = None) -> dict:
     niche = (niche or "geral").lower().strip()
-    profile = NICHE_PROFILES.get(niche, NICHE_PROFILES["geral"])
+    profile = niche_profile or NICHE_PROFILES.get(niche, NICHE_PROFILES["geral"])
     return {**DEFAULT_WEIGHTS, **profile["weights"]}
 
 
@@ -32,9 +36,10 @@ def _niche_keyword_bonus_with_learned(
     full_text: str,
     niche: str | None,
     learned_keywords: list[str] | None = None,
+    niche_profile: dict | None = None,
 ) -> tuple[float, list[str]]:
     niche = (niche or "geral").lower().strip()
-    profile = NICHE_PROFILES.get(niche, NICHE_PROFILES["geral"])
+    profile = niche_profile or NICHE_PROFILES.get(niche, NICHE_PROFILES["geral"])
     base_keywords = profile.get("keywords", [])
     learned_keywords = learned_keywords or []
 
@@ -124,6 +129,47 @@ BROKEN_END_PATTERNS = [
 FILLER_WORDS = {
     "tipo", "assim", "né", "cara", "mano", "tá", "aham", "hum", "é", "ai", "aí",
 }
+
+CONTEXT_DEPENDENCY_PATTERNS = [
+    "isso aqui",
+    "isso ai",
+    "isso aí",
+    "essa parte",
+    "esse trecho",
+    "como eu falei",
+    "como falei",
+    "como eu disse",
+    "como disse",
+    "ali em cima",
+    "aqui embaixo",
+    "nessa tela",
+    "olhando isso",
+    "vendo isso",
+]
+
+STRUCTURE_PATTERNS = [
+    "primeiro",
+    "segundo",
+    "terceiro",
+    "passo",
+    "3 passos",
+    "três passos",
+    "lista",
+    "resumindo",
+    "em resumo",
+]
+
+CTA_PATTERNS = [
+    "se inscreve",
+    "se inscrever",
+    "deixa o like",
+    "curte o video",
+    "curte o vídeo",
+    "compartilha",
+    "me segue",
+    "segue pra mais",
+    "link na bio",
+]
 
 
 def _normalize(text: str) -> str:
@@ -421,6 +467,108 @@ def _repetition_penalty(full_text: str) -> tuple[float, list[str]]:
     return score, reasons
 
 
+def _context_dependency_penalty(candidate: dict) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons = []
+    text = _normalize(candidate.get("text", ""))
+    opening = _normalize(candidate.get("opening_text", ""))
+
+    context_hits = _contains_any(text, CONTEXT_DEPENDENCY_PATTERNS)
+    if context_hits:
+        score -= min(2.4, context_hits * 0.8)
+        reasons.append("trecho dependente de contexto externo")
+
+    if opening.startswith(("então", "entao", "bom", "agora", "daí", "dai")) and not candidate.get("starts_clean"):
+        score -= 0.8
+        reasons.append("abertura com transição contextual")
+
+    return score, reasons
+
+
+def _structure_bonus(candidate: dict, mode: str) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons = []
+    text = _normalize(candidate.get("text", ""))
+
+    structure_hits = _contains_any(text, STRUCTURE_PATTERNS)
+    if structure_hits:
+        score += min(2.0, structure_hits * 0.7)
+        reasons.append("estrutura clara de explicação")
+
+    if text.count("?") >= 1 and mode == "short":
+        score += 0.4
+        reasons.append("curiosidade sustentada")
+
+    if re.search(r"\b\d+\b", text) and any(word in text for word in ("passo", "erro", "motivo", "forma", "jeito")):
+        score += 0.8
+        reasons.append("promessa específica")
+
+    return score, reasons
+
+
+def _cta_penalty(full_text: str, closing_text: str) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons = []
+    text = _normalize(full_text)
+    closing = _normalize(closing_text)
+
+    cta_hits = _contains_any(text, CTA_PATTERNS)
+    if cta_hits:
+        score -= min(2.0, cta_hits * 1.0)
+        reasons.append("fecha com CTA promocional")
+
+    if any(pattern in closing for pattern in CTA_PATTERNS):
+        score -= 0.8
+        reasons.append("encerramento mais promocional do que editorial")
+
+    return score, reasons
+
+
+def _transcript_context_score(candidate: dict, transcript_insights: dict | None) -> tuple[float, list[str]]:
+    if not transcript_insights:
+        return 0.0, []
+
+    score = 0.0
+    reasons = []
+    text = _normalize(candidate.get("text", ""))
+    start = float(candidate.get("start", 0.0) or 0.0)
+    end = float(candidate.get("end", 0.0) or 0.0)
+
+    priority_keywords = transcript_insights.get("priority_keywords", []) or []
+    avoid_patterns = transcript_insights.get("avoid_patterns", []) or []
+    promising_ranges = transcript_insights.get("promising_ranges", []) or []
+
+    keyword_hits = sum(1 for keyword in priority_keywords[:8] if _normalize(str(keyword)) in text)
+    if keyword_hits:
+        score += min(2.0, keyword_hits * 0.5)
+        reasons.append("alinhado aos tópicos prioritários da transcrição")
+
+    avoid_hits = sum(1 for pattern in avoid_patterns[:8] if _normalize(str(pattern)) in text)
+    if avoid_hits:
+        score -= min(2.0, avoid_hits * 0.6)
+        reasons.append("bate em padrão a evitar da transcrição")
+
+    for item in promising_ranges[:5]:
+        try:
+            range_start = float(item.get("start_hint_seconds", 0))
+            range_end = float(item.get("end_hint_seconds", 0))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        overlap_start = max(start, range_start)
+        overlap_end = min(end, range_end)
+        overlap = max(0.0, overlap_end - overlap_start)
+        if overlap <= 0:
+            continue
+        shorter = min(max(end - start, 1.0), max(range_end - range_start, 1.0))
+        overlap_ratio = overlap / shorter
+        if overlap_ratio >= 0.5:
+            score += 1.2
+            reasons.append("coincide com trecho promissor da análise global")
+            break
+
+    return score, reasons
+
+
 def _feedback_alignment_score(
     candidate_metrics: dict[str, float],
     full_text: str,
@@ -478,6 +626,8 @@ def _score_candidate(
     weights: dict,
     learned_keywords: list[str] | None,
     feedback_profile: dict | None,
+    transcript_insights: dict | None,
+    niche_profile: dict | None,
 ) -> dict:
     duration = float(candidate.get("duration", 0))
     text = candidate.get("text", "")
@@ -529,7 +679,31 @@ def _score_candidate(
     total_score += repetition_penalty * weights["repetition_penalty"]
     reasons.extend(repetition_reasons)
 
-    niche_bonus, niche_reasons = _niche_keyword_bonus_with_learned(text, niche, learned_keywords)
+    context_penalty, context_reasons = _context_dependency_penalty(candidate)
+    total_score += context_penalty * weights["context_penalty"]
+    reasons.extend(context_reasons)
+
+    structure_bonus, structure_reasons = _structure_bonus(candidate, mode)
+    total_score += structure_bonus * weights["structure_bonus"]
+    reasons.extend(structure_reasons)
+
+    cta_penalty, cta_reasons = _cta_penalty(text, closing_text)
+    total_score += cta_penalty * weights["cta_penalty"]
+    reasons.extend(cta_reasons)
+
+    transcript_context_score, transcript_context_reasons = _transcript_context_score(
+        candidate,
+        transcript_insights,
+    )
+    total_score += transcript_context_score * weights["transcript_context"]
+    reasons.extend(transcript_context_reasons)
+
+    niche_bonus, niche_reasons = _niche_keyword_bonus_with_learned(
+        text,
+        niche,
+        learned_keywords,
+        niche_profile=niche_profile,
+    )
     total_score += niche_bonus * weights["niche_bonus"]
     reasons.extend(niche_reasons)
 
@@ -574,6 +748,10 @@ def _score_candidate(
         "boundary_score": round(boundary_score, 2),
         "information_density_score": round(information_density_score, 2),
         "repetition_penalty": round(repetition_penalty, 2),
+        "context_penalty": round(context_penalty, 2),
+        "structure_bonus": round(structure_bonus, 2),
+        "cta_penalty": round(cta_penalty, 2),
+        "transcript_context_score": round(transcript_context_score, 2),
         "feedback_alignment_score": round(feedback_alignment_score, 2),
         "diversity_penalty": 0.0,
         "niche_used": niche,
@@ -647,8 +825,10 @@ def score_candidates(
     niche: str = "geral",
     learned_keywords: list[str] | None = None,
     feedback_profile: dict | None = None,
+    transcript_insights: dict | None = None,
+    niche_profile: dict | None = None,
 ) -> list[dict]:
-    weights = _get_niche_weights(niche)
+    weights = _get_niche_weights(niche, niche_profile=niche_profile)
     scored = [
         _score_candidate(
             candidate,
@@ -657,6 +837,8 @@ def score_candidates(
             weights=weights,
             learned_keywords=learned_keywords,
             feedback_profile=feedback_profile,
+            transcript_insights=transcript_insights,
+            niche_profile=niche_profile,
         )
         for candidate in candidates
     ]

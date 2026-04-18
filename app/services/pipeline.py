@@ -12,6 +12,7 @@ from app.models.job_step import JobStep
 from app.services.audio import extract_audio_from_video
 from app.services.niche_classifier import detect_niche
 from app.services.segmentation import load_transcript
+from app.services.transcript_insights import analyze_transcript_context
 from app.services.transcription import transcribe_audio
 from app.services.youtube import download_youtube_media
 
@@ -469,6 +470,7 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
                 "reason": "nicho já detectado",
                 "detected_niche": job.detected_niche,
                 "niche_confidence": job.niche_confidence,
+                "has_transcript_insights": bool(job.transcript_insights),
             },
         )
         return
@@ -483,9 +485,14 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
     transcript_data = load_transcript(job.transcript_path)
     transcript_text = transcript_data.get("text", "")
 
-    niche_result = detect_niche(job.title, transcript_text)
+    niche_result = detect_niche(job.title, transcript_text, db=db)
     job.detected_niche = niche_result["niche"]
     job.niche_confidence = niche_result["confidence"]
+    try:
+        insights = analyze_transcript_context(job.title, transcript_text)
+    except Exception:
+        insights = {}
+    job.transcript_insights = json.dumps(insights, ensure_ascii=False) if insights else None
     db.commit()
 
     mark_step_completed(
@@ -495,6 +502,7 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
         details={
             "detected_niche": job.detected_niche,
             "niche_confidence": job.niche_confidence,
+            "insights_generated": bool(job.transcript_insights),
         },
     )
 

@@ -20,6 +20,7 @@ class Job(Base):
 
     detected_niche = Column(String, nullable=True)
     niche_confidence = Column(String, nullable=True)
+    transcript_insights = Column(Text, nullable=True)
 
     error_message = Column(Text, nullable=True)
 

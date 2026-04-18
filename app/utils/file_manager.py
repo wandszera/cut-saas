@@ -4,5 +4,5 @@ from app.core.config import settings
 
 def ensure_directories():
     base = Path(settings.base_data_dir)
-    for folder in ["downloads", "transcripts", "clips", "temp"]:
+    for folder in ["downloads", "transcripts", "clips", "temp", "exports", "uploads"]:
         (base / folder).mkdir(parents=True, exist_ok=True)

@@ -1,10 +1,51 @@
+import json
+
 from sqlalchemy.orm import Session
 
 from app.models.candidate import Candidate
 from app.models.job import Job
-from app.services.niche_learning import get_feedback_profile_for_niche, get_learned_keywords_for_niche
+from app.core.config import settings
+from app.services.llm_analysis import analyze_candidates_with_llm
+from app.services.niche_learning import (
+    get_feedback_profile_for_niche,
+    get_hybrid_weights_for_niche,
+    get_learned_keywords_for_niche,
+)
+from app.services.niche_registry import get_niche_profile
 from app.services.segmentation import load_segments, build_candidate_windows
 from app.services.scoring import score_candidates
+
+
+def rerank_candidates_if_enabled(
+    candidates: list[dict],
+    mode: str,
+    db: Session | None = None,
+    *,
+    niche: str = "geral",
+) -> list[dict]:
+    if not candidates or not settings.llm_rerank_enabled:
+        return candidates
+
+    top_n = max(1, min(settings.llm_top_n, len(candidates)))
+    head = candidates[:top_n]
+    tail = candidates[top_n:]
+    hybrid_weights = (
+        get_hybrid_weights_for_niche(db, niche, mode)
+        if db is not None
+        else {"heuristic_weight": 0.65, "llm_weight": 0.35}
+    )
+
+    try:
+        reranked_head = analyze_candidates_with_llm(
+            head,
+            mode=mode,
+            heuristic_weight=hybrid_weights["heuristic_weight"],
+            llm_weight=hybrid_weights["llm_weight"],
+        )
+    except Exception:
+        return candidates
+
+    return reranked_head + tail
 
 def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Candidate]:
     (
@@ -18,15 +59,20 @@ def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Cand
     candidates = build_candidate_windows(raw_segments, mode=mode)
 
     niche = job.detected_niche or "geral"
+    niche_profile = get_niche_profile(db, niche)
     learned_keywords = get_learned_keywords_for_niche(db, niche)
     feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
+    transcript_insights = json.loads(job.transcript_insights) if job.transcript_insights else None
     ranked = score_candidates(
         candidates,
         mode=mode,
         niche=niche,
+        niche_profile=niche_profile,
         learned_keywords=learned_keywords,
         feedback_profile=feedback_profile,
+        transcript_insights=transcript_insights,
     )
+    ranked = rerank_candidates_if_enabled(ranked, mode=mode, db=db, niche=niche)
 
     created = []
     for item in ranked:
@@ -36,6 +82,7 @@ def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Cand
             start_time=item["start"],
             end_time=item["end"],
             duration=item["duration"],
+            heuristic_score=item.get("base_score", item.get("score")),
             score=item["score"],
             reason=item.get("reason"),
             opening_text=item.get("opening_text"),
@@ -46,6 +93,11 @@ def regenerate_candidates_for_job(db: Session, job: Job, mode: str) -> list[Cand
             closure_score=item.get("closure_score"),
             emotion_score=item.get("emotion_score"),
             duration_fit_score=item.get("duration_fit_score"),
+            transcript_context_score=item.get("transcript_context_score"),
+            llm_score=item.get("llm_score"),
+            llm_why=item.get("llm_why"),
+            llm_title=item.get("llm_title"),
+            llm_hook=item.get("llm_hook"),
             status="pending",
         )
         db.add(candidate)

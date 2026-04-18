@@ -20,6 +20,12 @@ class Clip(Base):
     score = Column(Float, nullable=True)
     reason = Column(String, nullable=True)
     text = Column(String, nullable=True)
+    headline = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    hashtags = Column(String, nullable=True)
+    suggested_filename = Column(String, nullable=True)
+    render_preset = Column(String, nullable=True)
+    publication_status = Column(String, nullable=False, default="draft")
 
     subtitles_burned = Column(Boolean, default=False, nullable=False)
     output_path = Column(String, nullable=False)

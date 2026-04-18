@@ -13,7 +13,10 @@ from app.main import app
 from app.models.candidate import Candidate
 from app.models.clip import Clip
 from app.models.job import Job
+from app.models.niche_definition import NicheDefinition
 from app.models.job_step import JobStep
+from app.services.llm_provider import LLMRateLimitError
+from app.services.niche_registry import create_pending_niche
 from app.services.pipeline import MAX_STEP_ATTEMPTS, process_job_pipeline
 
 
@@ -98,6 +101,11 @@ class RoutesTestCase(unittest.TestCase):
             "closure_score": 1.0,
             "emotion_score": 0.5,
             "duration_fit_score": 3.0,
+            "transcript_context_score": 0.0,
+            "llm_score": None,
+            "llm_why": None,
+            "llm_title": None,
+            "llm_hook": None,
             "status": "pending",
         }
         payload.update(overrides)
@@ -124,6 +132,12 @@ class RoutesTestCase(unittest.TestCase):
             "score": 9.2,
             "reason": "gancho forte",
             "text": "texto do clip",
+            "headline": "Titulo sugerido",
+            "description": "Descricao curta",
+            "hashtags": "#cortes #shorts",
+            "suggested_filename": "clip-sugerido.mp4",
+            "render_preset": "clean",
+            "publication_status": "draft",
             "subtitles_burned": False,
             "output_path": "C:/tmp/clip.mp4",
         }
@@ -137,6 +151,30 @@ class RoutesTestCase(unittest.TestCase):
             db.refresh(clip)
             db.expunge(clip)
             return clip
+        finally:
+            db.close()
+
+    def _create_niche_definition(self, **overrides) -> NicheDefinition:
+        payload = {
+            "name": "Nicho Custom",
+            "slug": "nicho-custom",
+            "description": "Descricao de teste",
+            "keywords_json": '["keyword1","keyword2","keyword3"]',
+            "weights_json": '{"hook": 1.1, "clarity": 1.1, "niche_bonus": 1.2}',
+            "source": "custom",
+            "status": "pending",
+            "llm_notes": "Sugestao de teste",
+        }
+        payload.update(overrides)
+
+        db = self._session()
+        try:
+            niche = NicheDefinition(**payload)
+            db.add(niche)
+            db.commit()
+            db.refresh(niche)
+            db.expunge(niche)
+            return niche
         finally:
             db.close()
 
@@ -180,6 +218,37 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
+    def test_create_local_video_job_success(self):
+        local_video = self.test_artifacts_dir / "video_local.mp4"
+        local_video.write_bytes(b"fake-video")
+
+        with (
+            patch("app.api.routes_jobs.extract_audio_from_video", return_value="C:/tmp/job_local.mp3"),
+            patch("app.api.routes_jobs.transcribe_audio", return_value="C:/tmp/job_local.json"),
+        ):
+            response = self.client.post(
+                "/jobs/local",
+                json={"video_path": str(local_video), "title": "Video externo"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["source_type"], "local")
+        self.assertEqual(data["status"], "done")
+        self.assertEqual(data["title"], "Video externo")
+        self.assertEqual(data["video_path"], str(local_video))
+        self.assertEqual(data["audio_path"], "C:/tmp/job_local.mp3")
+        self.assertEqual(data["transcript_path"], "C:/tmp/job_local.json")
+
+        db = self._session()
+        try:
+            job = db.query(Job).one()
+            self.assertEqual(job.source_type, "local")
+            self.assertEqual(job.source_value, str(local_video))
+            self.assertEqual(job.video_path, str(local_video))
+        finally:
+            db.close()
+
     def test_create_youtube_job_failure_marks_job_as_failed(self):
         with patch(
             "app.api.routes_jobs.download_youtube_media",
@@ -218,6 +287,30 @@ class RoutesTestCase(unittest.TestCase):
             job = db.query(Job).one()
             self.assertEqual(job.source_value, "https://www.youtube.com/watch?v=abc123def45")
             self.assertEqual(job.status, "pending")
+        finally:
+            db.close()
+
+    def test_web_local_job_creation_redirects_and_runs_background_pipeline(self):
+        with patch("app.web.routes_pages.process_job_pipeline") as mocked_pipeline:
+            response = self.client.post(
+                "/web/jobs/create-local",
+                data={"title": "Upload externo"},
+                files={"video_file": ("video_form.mp4", b"fake-video", "video/mp4")},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/jobs/1/view")
+        mocked_pipeline.assert_called_once_with(1)
+
+        db = self._session()
+        try:
+            job = db.query(Job).one()
+            self.assertEqual(job.source_type, "local")
+            self.assertEqual(job.title, "Upload externo")
+            self.assertEqual(job.status, "pending")
+            self.assertTrue(job.source_value.endswith("_video_form.mp4"))
+            self.assertEqual(job.source_value, job.video_path)
         finally:
             db.close()
 
@@ -278,9 +371,112 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("audio path:", response.text.lower())
         self.assertIn("C:/tmp/audio.mp3", response.text)
 
+    def test_niche_admin_page_renders_builtin_niches(self):
+        response = self.client.get("/nichos")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Nichos ativos", response.text)
+        self.assertIn("podcast", response.text.lower())
+        self.assertIn("religioso", response.text.lower())
+
+    def test_niche_suggestion_flow_creates_pending_niche(self):
+        with patch(
+            "app.web.routes_pages.create_pending_niche",
+            return_value={
+                "name": "Empreendedorismo Local",
+                "slug": "empreendedorismo-local",
+                "description": "Negócios locais, vendas e operação.",
+                "keywords": ["vendas", "caixa", "cliente"],
+                "status": "pending",
+                "source": "custom",
+                "llm_notes": "Sugestão consistente",
+            },
+        ) as mocked_create:
+            response = self.client.post(
+                "/nichos/sugerir",
+                data={
+                    "name": "Empreendedorismo Local",
+                    "description": "Pequenos negócios, vendas e caixa.",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers["location"].startswith("/nichos?message="))
+        mocked_create.assert_called_once()
+
+    def test_create_pending_niche_falls_back_when_llm_is_rate_limited(self):
+        db = self._session()
+        try:
+            with patch(
+                "app.services.niche_registry.generate_json_with_llm",
+                side_effect=LLMRateLimitError("OpenAI retornou 429 Too Many Requests"),
+            ):
+                created = create_pending_niche(
+                    db,
+                    name="Empreendedorismo Local",
+                    description="Pequenos negócios, vendas, caixa e atendimento.",
+                )
+
+            self.assertEqual(created["status"], "pending")
+            self.assertEqual(created["source"], "custom")
+            self.assertGreaterEqual(len(created["keywords"]), 5)
+            self.assertIn("limite temporário", created["llm_notes"].lower())
+        finally:
+            db.close()
+
+    def test_approve_pending_niche_from_page_marks_it_active(self):
+        niche = self._create_niche_definition(name="Finanças Creator", slug="financas-creator", status="pending")
+
+        response = self.client.post(f"/nichos/{niche.slug}/aprovar", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 303)
+        db = self._session()
+        try:
+            refreshed = db.query(NicheDefinition).filter(NicheDefinition.slug == niche.slug).one()
+            self.assertEqual(refreshed.status, "active")
+        finally:
+            db.close()
+
+    def test_archive_niche_from_page_marks_it_archived(self):
+        niche = self._create_niche_definition(name="Finanças Creator", slug="financas-creator", status="active")
+
+        response = self.client.post(f"/nichos/{niche.slug}/excluir", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 303)
+        db = self._session()
+        try:
+            refreshed = db.query(NicheDefinition).filter(NicheDefinition.slug == niche.slug).one()
+            self.assertEqual(refreshed.status, "archived")
+        finally:
+            db.close()
+
     def test_job_detail_page_renders_feedback_learning_context(self):
-        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        job = self._create_job(
+            status="done",
+            transcript_path="C:/tmp/transcript.json",
+            detected_niche="podcast",
+            transcript_insights=(
+                '{"main_topics":["precificacao"],"viral_angles":["erro de margem"],'
+                '"priority_keywords":["margem","preco"],"avoid_patterns":["contexto externo"],'
+                '"promising_ranges":[{"start_hint_seconds":30,"end_hint_seconds":95,"why":"gancho forte"}]}'
+            ),
+        )
         reference_job = self._create_job(status="done", detected_niche="podcast")
+        self._create_candidate(
+            job.id,
+            status="approved",
+            mode="short",
+            full_text="resultado prÃƒÂ¡tico com exemplo claro",
+            opening_text="resultado prÃƒÂ¡tico com exemplo claro",
+            closing_text="esse ÃƒÂ© o ponto final.",
+            reason="gancho forte, alinhado aos tópicos prioritários da transcrição, coincide com trecho promissor da análise global",
+            transcript_context_score=1.7,
+            llm_score=8.9,
+            llm_why="tem clareza, promessa concreta e funciona sem contexto externo",
+            llm_title="O erro de margem que derruba seu lucro",
+            llm_hook="Se a sua margem parece boa mas o lucro some, esse é o motivo",
+        )
 
         self._create_candidate(
             reference_job.id,
@@ -319,14 +515,25 @@ class RoutesTestCase(unittest.TestCase):
             }
         ]
 
-        with patch("app.web.routes_pages._get_ranked_candidates", return_value=ranked_candidates):
-            response = self.client.get(f"/jobs/{job.id}/view")
+        response = self.client.get(f"/jobs/{job.id}/view")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Aprendizado", response.text)
+        self.assertIn("Contexto da Transcrição", response.text)
+        self.assertIn("precificacao", response.text)
+        self.assertIn("00:30 -&gt; 01:35", response.text)
         self.assertIn("Base de feedback", response.text)
-        self.assertIn("alinhado ao feedback", response.text)
+        self.assertIn("Aprovado", response.text)
         self.assertIn("resultado", response.text.lower())
+        self.assertIn("alinhado ao contexto global", response.text)
+        self.assertIn("coincide com trecho promissor", response.text)
+        self.assertIn("Breakdown do score", response.text)
+        self.assertIn("Heurístico", response.text)
+        self.assertIn("Contexto", response.text)
+        self.assertIn("Final", response.text)
+        self.assertIn("LLM muito confiante", response.text)
+        self.assertIn("O erro de margem que derruba seu lucro", response.text)
+        self.assertIn("Peso híbrido atual", response.text)
 
     def test_recalibrate_feedback_from_page_redirects_back_to_job(self):
         job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
@@ -341,6 +548,322 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view?mode=short")
         mocked_learn.assert_called_once()
+
+    def test_candidate_editorial_actions_from_page_update_state(self):
+        job = self._create_job()
+        candidate = self._create_candidate(job.id, status="pending")
+
+        approve_response = self.client.post(
+            f"/jobs/{job.id}/view/candidates/{candidate.id}/status",
+            data={"mode": "short", "status": "approved"},
+            follow_redirects=False,
+        )
+        self.assertEqual(approve_response.status_code, 303)
+
+        favorite_response = self.client.post(
+            f"/jobs/{job.id}/view/candidates/{candidate.id}/favorite",
+            data={"mode": "short"},
+            follow_redirects=False,
+        )
+        self.assertEqual(favorite_response.status_code, 303)
+
+        notes_response = self.client.post(
+            f"/jobs/{job.id}/view/candidates/{candidate.id}/notes",
+            data={"mode": "short", "editorial_notes": "Abrir 2s antes e manter legenda."},
+            follow_redirects=False,
+        )
+        self.assertEqual(notes_response.status_code, 303)
+
+        db = self._session()
+        try:
+            refreshed = db.query(Candidate).filter(Candidate.id == candidate.id).one()
+            self.assertEqual(refreshed.status, "approved")
+            self.assertTrue(refreshed.is_favorite)
+            self.assertEqual(refreshed.editorial_notes, "Abrir 2s antes e manter legenda.")
+        finally:
+            db.close()
+
+    def test_render_approved_from_page_creates_clips_and_marks_candidates_rendered(self):
+        job = self._create_job()
+        first = self._create_candidate(job.id, status="approved", is_favorite=True, start_time=10.0, end_time=70.0, duration=60.0)
+        second = self._create_candidate(job.id, status="approved", start_time=90.0, end_time=150.0, duration=60.0)
+
+        def render_side_effect(**kwargs):
+            return f"C:/tmp/page_rendered_{kwargs['clip_index']}.mp4"
+
+        with patch("app.web.routes_pages.render_clip", side_effect=render_side_effect):
+            response = self.client.post(
+                f"/jobs/{job.id}/view/render-approved",
+                data={"mode": "short", "render_preset": "impact"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view?mode=short&render_preset=impact")
+
+        db = self._session()
+        try:
+            refreshed = {
+                candidate.id: candidate.status
+                for candidate in db.query(Candidate).filter(Candidate.job_id == job.id).all()
+            }
+            clips = db.query(Clip).filter(Clip.job_id == job.id).all()
+            self.assertEqual(refreshed[first.id], "rendered")
+            self.assertEqual(refreshed[second.id], "rendered")
+            self.assertEqual(len(clips), 2)
+        finally:
+            db.close()
+
+    def test_render_presets_endpoint_returns_available_presets(self):
+        response = self.client.get("/jobs/render-presets")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["default"], "clean")
+        self.assertTrue(any(preset["key"] == "impact" for preset in data["presets"]))
+
+    def test_list_rendered_clips_returns_editorial_package(self):
+        job = self._create_job()
+        clip = self._create_clip(job.id)
+
+        response = self.client.get(f"/jobs/{job.id}/clips")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total_clips"], 1)
+        self.assertEqual(data["clips"][0]["clip_id"], clip.id)
+        self.assertEqual(data["clips"][0]["headline"], "Titulo sugerido")
+        self.assertEqual(data["clips"][0]["hashtags"], "#cortes #shorts")
+        self.assertEqual(data["clips"][0]["suggested_filename"], "clip-sugerido.mp4")
+        self.assertEqual(data["clips"][0]["publication_status"], "draft")
+
+    def test_export_job_bundle_returns_zip_response(self):
+        job = self._create_job()
+        self._create_clip(job.id)
+        export_zip = self.test_artifacts_dir / "job_1_export.zip"
+        export_zip.write_bytes(b"fake zip")
+
+        with patch("app.api.routes_jobs.build_job_export_bundle", return_value=str(export_zip)):
+            response = self.client.get(f"/jobs/{job.id}/export")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/zip")
+        self.assertIn("job_1_export.zip", response.headers["content-disposition"])
+
+    def test_list_job_exports_returns_history(self):
+        job = self._create_job()
+        export_zip = self.test_artifacts_dir / f"job_{job.id}_export.zip"
+        export_zip.write_bytes(b"fake zip")
+
+        with patch(
+            "app.api.routes_jobs.list_job_export_bundles",
+            return_value=[
+                {
+                    "name": export_zip.name,
+                    "path": str(export_zip),
+                    "size_bytes": export_zip.stat().st_size,
+                    "modified_at": datetime.now(UTC),
+                }
+            ],
+        ):
+            response = self.client.get(f"/jobs/{job.id}/exports")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total_exports"], 1)
+        self.assertEqual(data["exports"][0]["name"], export_zip.name)
+        self.assertIn(f"/jobs/{job.id}/export/files/", data["exports"][0]["download_url"])
+
+    def test_download_existing_export_returns_file(self):
+        job = self._create_job()
+        export_zip = self.test_artifacts_dir / f"job_{job.id}_export.zip"
+        export_zip.write_bytes(b"fake zip")
+
+        with patch(
+            "app.api.routes_jobs.list_job_export_bundles",
+            return_value=[
+                {
+                    "name": export_zip.name,
+                    "path": str(export_zip),
+                    "size_bytes": export_zip.stat().st_size,
+                    "modified_at": datetime.now(UTC),
+                }
+            ],
+        ):
+            response = self.client.get(f"/jobs/{job.id}/export/files/{export_zip.name}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/zip")
+
+    def test_update_clip_publication_status_endpoint(self):
+        job = self._create_job()
+        clip = self._create_clip(job.id)
+
+        response = self.client.post(f"/jobs/clips/{clip.id}/publication", params={"status": "ready"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["publication_status"], "ready")
+
+        db = self._session()
+        try:
+            refreshed = db.query(Clip).filter(Clip.id == clip.id).one()
+            self.assertEqual(refreshed.publication_status, "ready")
+        finally:
+            db.close()
+
+    def test_home_filters_jobs_by_status(self):
+        self._create_job(status="done", title="Finalizado")
+        self._create_job(status="failed", title="Falhou")
+
+        response = self.client.get("/", params={"status_filter": "failed"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Falhou", response.text)
+        self.assertNotIn("Finalizado", response.text)
+
+    def test_home_renders_dashboard_summary_cards(self):
+        job_done = self._create_job(status="done", title="Com clip")
+        job_active = self._create_job(status="transcribing", title="Ativo")
+        self._create_candidate(job_done.id, status="approved")
+        self._create_clip(job_done.id)
+
+        with patch(
+            "app.web.routes_pages.list_job_export_bundles",
+            side_effect=lambda job_id: [{"name": "bundle.zip"}] if job_id == job_done.id else [],
+        ):
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Jobs monitorados", response.text)
+        self.assertIn("Com aprovados pendentes", response.text)
+        self.assertIn("Com clips gerados", response.text)
+        self.assertIn("Com export pronto", response.text)
+        self.assertIn("Ativo", response.text)
+
+    def test_home_renders_publication_board_sections(self):
+        ready_job = self._create_job(status="done", title="Pronto")
+        published_job = self._create_job(status="done", title="Publicado")
+        discarded_job = self._create_job(status="done", title="Descartado")
+
+        self._create_clip(ready_job.id, publication_status="ready", headline="Clip pronto")
+        self._create_clip(published_job.id, publication_status="published", headline="Clip publicado")
+        self._create_clip(discarded_job.id, publication_status="discarded", headline="Clip descartado")
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Prontos para publicar", response.text)
+        self.assertIn("Publicados recentemente", response.text)
+        self.assertIn("Descartados", response.text)
+        self.assertIn("Clip pronto", response.text)
+        self.assertIn("Clip publicado", response.text)
+        self.assertIn("Clip descartado", response.text)
+
+    def test_job_detail_filters_candidates_and_exports(self):
+        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        self._create_candidate(job.id, status="approved", is_favorite=True, full_text="texto favorito")
+        self._create_candidate(job.id, status="rejected", full_text="texto rejeitado")
+        export_zip = self.test_artifacts_dir / f"job_{job.id}_export.zip"
+        export_zip.write_bytes(b"fake zip")
+
+        with patch(
+            "app.web.routes_pages.list_job_export_bundles",
+            return_value=[
+                {
+                    "name": export_zip.name,
+                    "path": str(export_zip),
+                    "size_bytes": export_zip.stat().st_size,
+                    "modified_at": datetime.now(UTC),
+                }
+            ],
+        ):
+            response = self.client.get(
+                f"/jobs/{job.id}/view",
+                params={"candidate_filter": "favorite", "export_filter": "latest"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("texto favorito", response.text)
+        self.assertNotIn("texto rejeitado", response.text)
+        self.assertIn(export_zip.name, response.text)
+
+    def test_job_detail_sorts_candidates_by_llm_score(self):
+        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        self._create_candidate(
+            job.id,
+            full_text="candidato heuristico mais forte",
+            score=9.8,
+            heuristic_score=9.8,
+            llm_score=7.2,
+        )
+        self._create_candidate(
+            job.id,
+            full_text="candidato mais forte para llm",
+            score=8.9,
+            heuristic_score=8.4,
+            llm_score=9.6,
+        )
+
+        response = self.client.get(
+            f"/jobs/{job.id}/view",
+            params={"candidate_sort": "llm"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Confiança da LLM", response.text)
+        self.assertLess(
+            response.text.index("candidato mais forte para llm"),
+            response.text.index("candidato heuristico mais forte"),
+        )
+
+    def test_job_detail_filters_and_sorts_divergent_candidates(self):
+        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        self._create_candidate(
+            job.id,
+            full_text="candidato com divergencia forte",
+            score=8.0,
+            heuristic_score=9.5,
+            llm_score=6.8,
+        )
+        self._create_candidate(
+            job.id,
+            full_text="candidato alinhado",
+            score=8.4,
+            heuristic_score=8.3,
+            llm_score=8.1,
+        )
+
+        response = self.client.get(
+            f"/jobs/{job.id}/view",
+            params={"candidate_filter": "divergent", "candidate_sort": "divergent"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Maior divergência", response.text)
+        self.assertIn("divergência forte", response.text)
+        self.assertIn("Heurístico gostou mais do corte do que a LLM", response.text)
+        self.assertIn("Explicação adaptativa", response.text)
+        self.assertIn("candidato com divergencia forte", response.text)
+        self.assertNotIn("candidato alinhado", response.text)
+
+    def test_update_clip_publication_status_from_page(self):
+        job = self._create_job(status="done")
+        clip = self._create_clip(job.id)
+
+        response = self.client.post(
+            f"/jobs/{job.id}/view/clips/{clip.id}/publication",
+            data={"mode": "short", "render_preset": "clean", "status": "published"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+
+        db = self._session()
+        try:
+            refreshed = db.query(Clip).filter(Clip.id == clip.id).one()
+            self.assertEqual(refreshed.publication_status, "published")
+        finally:
+            db.close()
 
     def test_retry_job_from_page_redirects_and_schedules_pipeline(self):
         job = self._create_job(status="failed")
@@ -471,6 +994,7 @@ class RoutesTestCase(unittest.TestCase):
                 self.start_time = start
                 self.end_time = end
                 self.duration = round(end - start, 2)
+                self.heuristic_score = score + 0.3
                 self.score = score
                 self.reason = "gancho forte"
                 self.opening_text = "abertura"
@@ -481,6 +1005,11 @@ class RoutesTestCase(unittest.TestCase):
                 self.closure_score = 1.0
                 self.emotion_score = 0.5
                 self.duration_fit_score = 3.0
+                self.transcript_context_score = 1.4 if candidate_id == 1 else -0.6
+                self.llm_score = 8.8 if candidate_id == 1 else None
+                self.llm_why = "tem começo forte e funciona sozinho" if candidate_id == 1 else None
+                self.llm_title = "Título editorial" if candidate_id == 1 else None
+                self.llm_hook = "Gancho editorial" if candidate_id == 1 else None
                 self.status = "pending"
 
         saved_candidates = [
@@ -505,6 +1034,10 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(len(data["segments"]), 1)
         self.assertEqual(data["segments"][0]["candidate_id"], 1)
         self.assertEqual(data["segments"][0]["score"], 9.2)
+        self.assertEqual(data["segments"][0]["transcript_context_score"], 1.4)
+        self.assertEqual(data["segments"][0]["llm_score"], 8.8)
+        self.assertEqual(data["segments"][0]["llm_title"], "Título editorial")
+        self.assertIn("adaptive_blend_explanation", data["segments"][0])
 
     def test_get_job_returns_expected_payload(self):
         job = self._create_job(
@@ -704,6 +1237,8 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["feedback_profile"]["positive_count"], 2)
         self.assertEqual(data["feedback_profile"]["negative_count"], 1)
         self.assertIn("resultado", data["feedback_profile"]["successful_keywords"])
+        self.assertIn("hybrid_weight_profile", data["feedback_profile"])
+        self.assertIn("heuristic_weight", data["feedback_profile"]["hybrid_weight_profile"])
 
     def test_recalibrate_job_feedback_profile_returns_updated_summary(self):
         target_job = self._create_job(status="done", detected_niche="podcast")
@@ -722,6 +1257,14 @@ class RoutesTestCase(unittest.TestCase):
                     "successful_keywords": ["resultado", "exemplo"],
                     "positive_means": {"hook_score": 3.1},
                     "negative_means": {"hook_score": 0.7},
+                    "hybrid_weight_profile": {
+                        "reviewed_count": 3,
+                        "approved_count": 2,
+                        "rejected_count": 1,
+                        "preferred_source": "heuristic",
+                        "heuristic_weight": 0.7,
+                        "llm_weight": 0.3,
+                    },
                 },
             ) as mocked_profile,
         ):
@@ -733,6 +1276,7 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["learned_keywords_count"], 2)
         self.assertTrue(data["feedback_profile"]["min_samples_reached"])
         self.assertEqual(data["feedback_profile"]["successful_keywords"], ["resultado", "exemplo"])
+        self.assertEqual(data["feedback_profile"]["hybrid_weight_profile"]["heuristic_weight"], 0.7)
         mocked_learn.assert_called_once()
         mocked_profile.assert_called_once()
 
@@ -782,6 +1326,10 @@ class RoutesTestCase(unittest.TestCase):
             patch("app.services.pipeline.transcribe_audio", return_value="C:/tmp/generated_transcript.json"),
             patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste"}),
             patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch(
+                "app.services.pipeline.analyze_transcript_context",
+                return_value={"priority_keywords": ["resultado"], "promising_ranges": []},
+            ),
         ):
             process_job_pipeline(job.id, start_from_step="transcribing")
 
@@ -796,6 +1344,9 @@ class RoutesTestCase(unittest.TestCase):
             self.assertIn('"attempt": 1', details)
             self.assertIn('"duration_seconds":', details)
             self.assertIn('"transcript_path": "C:/tmp/generated_transcript.json"', details)
+
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            self.assertIn("priority_keywords", refreshed_job.transcript_insights)
         finally:
             db.close()
 
@@ -1200,6 +1751,9 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["duration"], 33.0)
         self.assertTrue(data["subtitles_burned"])
         self.assertEqual(data["output_path"], "C:/tmp/clip_1.mp4")
+        self.assertIn("headline", data)
+        self.assertIn("hashtags", data)
+        self.assertIn("suggested_filename", data)
 
         db = self._session()
         try:
@@ -1252,7 +1806,16 @@ class RoutesTestCase(unittest.TestCase):
 
     def test_list_approved_candidates_returns_only_approved_for_mode(self):
         job = self._create_job()
-        approved = self._create_candidate(job.id, status="approved", score=9.5)
+        approved = self._create_candidate(
+            job.id,
+            status="approved",
+            score=9.5,
+            transcript_context_score=1.1,
+            llm_score=8.2,
+            llm_why="bom equilíbrio entre gancho e clareza",
+            llm_title="Título aprovado pela LLM",
+            llm_hook="Gancho aprovado pela LLM",
+        )
         self._create_candidate(job.id, status="pending", score=8.0)
         self._create_candidate(job.id, status="approved", mode="long", score=9.9)
 
@@ -1263,6 +1826,10 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["total_approved_candidates"], 1)
         self.assertEqual(data["candidates"][0]["candidate_id"], approved.id)
         self.assertEqual(data["candidates"][0]["status"], "approved")
+        self.assertEqual(data["candidates"][0]["transcript_context_score"], 1.1)
+        self.assertEqual(data["candidates"][0]["llm_score"], 8.2)
+        self.assertEqual(data["candidates"][0]["llm_title"], "Título aprovado pela LLM")
+        self.assertIn("adaptive_blend_explanation", data["candidates"][0])
 
     def test_render_candidate_by_id_creates_clip_and_marks_candidate_rendered(self):
         job = self._create_job()
@@ -1275,6 +1842,8 @@ class RoutesTestCase(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["candidate_id"], candidate.id)
         self.assertEqual(data["output_path"], "C:/tmp/candidate_clip.mp4")
+        self.assertIn("headline", data)
+        self.assertIn("hashtags", data)
 
         db = self._session()
         try:
@@ -1329,6 +1898,8 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["end"], 150.0)
         self.assertEqual(data["output_path"], "C:/tmp/ranked_clip.mp4")
         self.assertTrue(data["subtitles_burned"])
+        self.assertIn("headline", data)
+        self.assertIn("suggested_filename", data)
 
         db = self._session()
         try:
@@ -1449,6 +2020,108 @@ class RoutesTestCase(unittest.TestCase):
             self.assertEqual(len(clips), 2)
         finally:
             db.close()
+
+    def test_ranking_insights_returns_hybrid_weights_divergence_and_distribution(self):
+        job = self._create_job(status="done", detected_niche="podcast")
+        reference_job = self._create_job(status="done", detected_niche="podcast")
+
+        self._create_candidate(
+            reference_job.id,
+            mode="short",
+            status="approved",
+            score=9.4,
+            heuristic_score=7.2,
+            llm_score=9.5,
+            duration=55.0,
+            full_text="erro de margem com exemplo pratico",
+        )
+        self._create_candidate(
+            reference_job.id,
+            mode="short",
+            status="rejected",
+            score=7.1,
+            heuristic_score=8.8,
+            llm_score=6.0,
+            duration=95.0,
+            full_text="explicacao generica sem foco",
+        )
+
+        candidate_a = self._create_candidate(
+            job.id,
+            mode="short",
+            status="pending",
+            is_favorite=True,
+            score=9.6,
+            heuristic_score=7.1,
+            llm_score=9.6,
+            duration=58.0,
+            full_text="erro de margem com gancho forte e exemplo claro",
+        )
+        candidate_b = self._create_candidate(
+            job.id,
+            mode="short",
+            status="approved",
+            score=8.2,
+            heuristic_score=8.7,
+            llm_score=7.0,
+            duration=92.0,
+            full_text="passo a passo com contexto bom",
+        )
+        self._create_candidate(
+            job.id,
+            mode="short",
+            status="rendered",
+            score=6.8,
+            heuristic_score=6.8,
+            llm_score=None,
+            duration=28.0,
+            full_text="trecho curto complementar",
+        )
+
+        response = self.client.get(f"/jobs/{job.id}/ranking-insights?mode=short")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["job_id"], job.id)
+        self.assertEqual(data["mode"], "short")
+        self.assertEqual(data["candidate_summary"]["total_candidates"], 3)
+        self.assertEqual(data["candidate_summary"]["llm_scored_count"], 2)
+        self.assertEqual(data["candidate_summary"]["favorite_count"], 1)
+        self.assertEqual(data["candidate_summary"]["status_counts"]["pending"], 1)
+        self.assertEqual(data["candidate_summary"]["status_counts"]["approved"], 1)
+        self.assertEqual(data["candidate_summary"]["status_counts"]["rendered"], 1)
+        self.assertEqual(data["divergence_summary"]["moderate_or_higher_count"], 2)
+        self.assertEqual(data["divergence_summary"]["strong_count"], 1)
+        self.assertEqual(data["divergence_summary"]["llm_favored_count"], 1)
+        self.assertEqual(data["divergence_summary"]["heuristic_favored_count"], 1)
+        self.assertEqual(data["divergence_summary"]["top_divergent_candidates"][0]["candidate_id"], candidate_a.id)
+        self.assertEqual(data["divergence_summary"]["top_divergent_candidates"][1]["candidate_id"], candidate_b.id)
+        self.assertEqual(data["weights"]["preferred_source"], "balanced")
+        self.assertEqual(data["weights"]["heuristic_weight"], 0.6)
+        self.assertEqual(data["weights"]["llm_weight"], 0.4)
+        self.assertEqual(data["weights"]["reviewed_count"], 3)
+        self.assertEqual(data["distribution"]["final_score"]["count"], 3)
+        self.assertEqual(data["distribution"]["final_score"]["buckets"][0]["count"], 1)
+        self.assertEqual(data["distribution"]["final_score"]["buckets"][1]["count"], 1)
+        self.assertEqual(data["distribution"]["final_score"]["buckets"][3]["count"], 1)
+        self.assertEqual(data["distribution"]["duration_seconds"]["buckets"][0]["count"], 1)
+        self.assertEqual(data["distribution"]["duration_seconds"]["buckets"][1]["count"], 1)
+        self.assertEqual(data["distribution"]["duration_seconds"]["buckets"][2]["count"], 0)
+        self.assertEqual(data["distribution"]["duration_seconds"]["buckets"][3]["count"], 1)
+
+    def test_ranking_insights_handles_jobs_without_candidates(self):
+        job = self._create_job(status="done", detected_niche="podcast")
+
+        response = self.client.get(f"/jobs/{job.id}/ranking-insights?mode=short")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["candidate_summary"]["total_candidates"], 0)
+        self.assertEqual(data["candidate_summary"]["llm_scored_count"], 0)
+        self.assertEqual(data["divergence_summary"]["compared_candidates"], 0)
+        self.assertIsNone(data["distribution"]["final_score"]["avg"])
+        self.assertEqual(data["distribution"]["final_score"]["buckets"][0]["count"], 0)
+        self.assertEqual(data["distribution"]["duration_seconds"]["buckets"][3]["count"], 0)
 
 
 if __name__ == "__main__":

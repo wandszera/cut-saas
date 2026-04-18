@@ -331,6 +331,105 @@
       color: #ffe7bf;
     }
 
+    .badge-context-good {
+      background: #17304a;
+      color: #d8ecff;
+    }
+
+    .badge-context-warn {
+      background: #55301b;
+      color: #ffe5cf;
+    }
+
+    .badge-llm-good {
+      background: #31205b;
+      color: #eee1ff;
+    }
+
+    .badge-llm-warn {
+      background: #4b2647;
+      color: #ffdff5;
+    }
+
+    .badge-divergence {
+      background: #5b2f18;
+      color: #ffd9bf;
+    }
+
+    .badge-status-approved {
+      background: #173d2d;
+      color: #ccffe9;
+    }
+
+    .badge-status-rejected {
+      background: #5a2525;
+      color: #ffd6d6;
+    }
+
+    .badge-status-rendered {
+      background: #223b5c;
+      color: #d5e8ff;
+    }
+
+    .notes-form {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .metric-card {
+      background: #101010;
+      border: 1px solid #252525;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .metric-label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8f8f8f;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #e6e6e6;
+    }
+
+    .metric-strong .metric-value {
+      color: #72e0a6;
+    }
+
+    .metric-positive .metric-value {
+      color: #8dd0ff;
+    }
+
+    .metric-negative .metric-value {
+      color: #ffb8a3;
+    }
+
+    .notes-form textarea {
+      width: 100%;
+      min-height: 84px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #101010;
+      color: #fff;
+      resize: vertical;
+      font: inherit;
+    }
+
     .section-label {
       font-size: 11px;
       color: #72e0a6;
@@ -407,6 +506,14 @@
     .clip:hover {
       border-color: #3a3a3a;
       background: #1a1a1a;
+    }
+
+    .export-item {
+      background: #141414;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid #2a2a2a;
+      margin-bottom: 12px;
     }
 
     .clip video {
@@ -803,9 +910,53 @@
         <strong>Vocabulário recorrente</strong>
         <span>{{ feedback_profile.successful_keywords_preview|join(", ") if feedback_profile.successful_keywords_preview else "Sem destaque ainda" }}</span>
       </div>
+      <div class="meta-item">
+        <strong>Peso híbrido atual</strong>
+        <span>Heurístico {{ feedback_profile.hybrid_weight_profile.heuristic_weight }} | LLM {{ feedback_profile.hybrid_weight_profile.llm_weight }}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Divergências revisadas</strong>
+        <span>{{ feedback_profile.hybrid_weight_profile.reviewed_count }} casos ({{ feedback_profile.hybrid_weight_profile.approved_count }} aprovados / {{ feedback_profile.hybrid_weight_profile.rejected_count }} rejeitados)</span>
+      </div>
+    </div>
+    <div class="snippet" style="margin-top: 12px;">
+      {{ feedback_profile.hybrid_weight_profile.summary }}
     </div>
     {% else %}
     <p style="color: #888;">Ainda não há feedback suficiente para recalibrar o ranking deste nicho.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if transcript_insights %}
+  <div class="card">
+    <h2>Contexto da Transcrição</h2>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <strong>Tópicos principais</strong>
+        <span>{{ transcript_insights.main_topics|join(", ") if transcript_insights.main_topics else "Sem tópicos detectados" }}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Ângulos virais</strong>
+        <span>{{ transcript_insights.viral_angles|join(", ") if transcript_insights.viral_angles else "Sem ângulos sugeridos" }}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Palavras prioritárias</strong>
+        <span>{{ transcript_insights.priority_keywords|join(", ") if transcript_insights.priority_keywords else "Sem palavras prioritárias" }}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Padrões a evitar</strong>
+        <span>{{ transcript_insights.avoid_patterns|join(", ") if transcript_insights.avoid_patterns else "Sem padrões a evitar" }}</span>
+      </div>
+    </div>
+
+    {% if transcript_insights.promising_ranges %}
+    <div class="section-label">Trechos promissores</div>
+    {% for item in transcript_insights.promising_ranges %}
+    <div class="snippet" style="margin-bottom: 8px;">
+      <strong>{{ item.label }}</strong>{% if item.why %} — {{ item.why }}{% endif %}
+    </div>
+    {% endfor %}
     {% endif %}
   </div>
   {% endif %}
@@ -818,6 +969,52 @@
         <select name="mode">
           <option value="short" {% if mode=="short" %}selected{% endif %}>📱 Short (vertical 9:16)</option>
           <option value="long" {% if mode=="long" %}selected{% endif %}>📺 Long (horizontal 16:9)</option>
+        </select>
+      </div>
+      <div>
+        <label><strong>Preset visual</strong></label>
+        <select name="render_preset">
+          {% for preset in render_presets %}
+          <option value="{{ preset.key }}" {% if render_preset == preset.key %}selected{% endif %}>{{ preset.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label><strong>Filtro candidatos</strong></label>
+        <select name="candidate_filter">
+          <option value="all" {% if candidate_filter == "all" %}selected{% endif %}>Todos</option>
+          <option value="approved" {% if candidate_filter == "approved" %}selected{% endif %}>Aprovados</option>
+          <option value="rejected" {% if candidate_filter == "rejected" %}selected{% endif %}>Rejeitados</option>
+          <option value="rendered" {% if candidate_filter == "rendered" %}selected{% endif %}>Renderizados</option>
+          <option value="favorite" {% if candidate_filter == "favorite" %}selected{% endif %}>Favoritos</option>
+          <option value="divergent" {% if candidate_filter == "divergent" %}selected{% endif %}>Divergentes</option>
+        </select>
+      </div>
+      <div>
+        <label><strong>Ordenação candidatos</strong></label>
+        <select name="candidate_sort">
+          <option value="hybrid" {% if candidate_sort == "hybrid" %}selected{% endif %}>Ranking híbrido</option>
+          <option value="heuristic" {% if candidate_sort == "heuristic" %}selected{% endif %}>Heurístico puro</option>
+          <option value="llm" {% if candidate_sort == "llm" %}selected{% endif %}>Confiança da LLM</option>
+          <option value="divergent" {% if candidate_sort == "divergent" %}selected{% endif %}>Maior divergência</option>
+        </select>
+      </div>
+      <div>
+        <label><strong>Filtro clips</strong></label>
+        <select name="clip_filter">
+          <option value="all" {% if clip_filter == "all" %}selected{% endif %}>Todos</option>
+          <option value="short" {% if clip_filter == "short" %}selected{% endif %}>Somente short</option>
+          <option value="long" {% if clip_filter == "long" %}selected{% endif %}>Somente long</option>
+          <option value="subtitled" {% if clip_filter == "subtitled" %}selected{% endif %}>Com legenda</option>
+          <option value="ready" {% if clip_filter == "ready" %}selected{% endif %}>Prontos para publicar</option>
+          <option value="published" {% if clip_filter == "published" %}selected{% endif %}>Publicados</option>
+        </select>
+      </div>
+      <div>
+        <label><strong>Filtro exportações</strong></label>
+        <select name="export_filter">
+          <option value="all" {% if export_filter == "all" %}selected{% endif %}>Todas</option>
+          <option value="latest" {% if export_filter == "latest" %}selected{% endif %}>Somente mais recente</option>
         </select>
       </div>
       <div>
@@ -849,6 +1046,15 @@
         </select>
       </div>
 
+      <div>
+        <label for="manual_preset"><strong>Preset visual</strong></label>
+        <select name="render_preset" id="manual_preset">
+          {% for preset in render_presets %}
+          <option value="{{ preset.key }}" {% if render_preset == preset.key %}selected{% endif %}>{{ preset.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
       <div style="display: flex; align-items: center; gap: 8px;">
         <input type="checkbox" name="burn_subtitles" value="true" id="manual_subtitles">
         <label for="manual_subtitles" style="margin: 0;">Legenda embutida</label>
@@ -868,7 +1074,34 @@
   </div>
 
   <div class="card">
+    <h2>Fila editorial</h2>
+    <p style="color: #888; font-size: 13px;">Aprove os melhores candidatos, marque favoritos e renderize o lote somente quando a seleção estiver pronta.</p>
+    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Preset ativo: <strong>{{ render_preset }}</strong></p>
+    <form method="post" action="/jobs/{{ job.id }}/view/render-approved" class="form-group">
+      <input type="hidden" name="mode" value="{{ mode }}">
+      <input type="hidden" name="render_preset" value="{{ render_preset }}">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" name="burn_subtitles" value="true" id="approved_subtitles">
+        <label for="approved_subtitles" style="margin: 0;">Legenda embutida no lote</label>
+      </div>
+      <div>
+        <button type="submit">Renderizar aprovados</button>
+      </div>
+      {% if clips %}
+      <div>
+        <a href="/jobs/{{ job.id }}/export" target="_blank" style="display: inline-flex; align-items: center; padding: 12px 14px; border-radius: 8px; background: #252525; border: 1px solid #333; color: #fff;">Exportar pacote</a>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="card">
     <h2>🎬 Candidatos</h2>
+    {% if candidates_missing %}
+    <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: #2b2412; border: 1px solid #5c4a1e; color: #f6dea0;">
+      Este video ainda nao tem candidatos persistidos para este modo. Use a acao de analisar para gerar os cortes sem travar a pagina.
+    </div>
+    {% endif %}
     {% if candidates %}
       {% for candidate in candidates %}
       <div class="candidate">
@@ -887,14 +1120,94 @@
           {% else %}
           <span class="badge badge-score-weak">💧 {{ candidate.score }} — {{ candidate.score_label }}</span>
           {% endif %}
+          <span class="badge">Heurístico {{ candidate.heuristic_score }}</span>
 
           <span class="badge">{{ candidate.reason }}</span>
+          {% if candidate.status == "approved" %}
+          <span class="badge badge-status-approved">Aprovado</span>
+          {% elif candidate.status == "rejected" %}
+          <span class="badge badge-status-rejected">Rejeitado</span>
+          {% elif candidate.status == "rendered" %}
+          <span class="badge badge-status-rendered">Renderizado</span>
+          {% else %}
+          <span class="badge">Pendente</span>
+          {% endif %}
+          {% if candidate.is_favorite %}
+          <span class="badge badge-feedback-good">Favorito</span>
+          {% endif %}
           {% if candidate.feedback_label %}
           <span class="badge {% if candidate.feedback_alignment_score >= 0 %}badge-feedback-good{% else %}badge-feedback-warn{% endif %}">
             {{ candidate.feedback_label }}{% if candidate.feedback_alignment_score != 0 %} ({{ candidate.feedback_alignment_score }}){% endif %}
           </span>
           {% endif %}
+          {% if candidate.transcript_context_label %}
+          <span class="badge {% if candidate.transcript_context_score >= 0 %}badge-context-good{% else %}badge-context-warn{% endif %}">
+            {{ candidate.transcript_context_label }}{% if candidate.transcript_context_score != 0 %} ({{ candidate.transcript_context_score }}){% endif %}
+          </span>
+          {% endif %}
+          {% if candidate.llm_label %}
+          <span class="badge {% if candidate.llm_score >= 7 %}badge-llm-good{% else %}badge-llm-warn{% endif %}">
+            {{ candidate.llm_label }}{% if candidate.llm_score is not none %} ({{ candidate.llm_score }}){% endif %}
+          </span>
+          {% endif %}
+          {% if candidate.divergence_label %}
+          <span class="badge badge-divergence">
+            {{ candidate.divergence_label }}{% if candidate.divergence_score is not none %} ({{ candidate.divergence_score }}){% endif %}
+          </span>
+          {% endif %}
         </div>
+
+        {% if candidate.transcript_context_reasons %}
+        <div class="section-label">Contexto global</div>
+        <div class="snippet">
+          {{ candidate.transcript_context_reasons|join(", ") }}
+        </div>
+        {% endif %}
+
+        <div class="section-label">Breakdown do score</div>
+        <div class="metric-grid">
+          {% for metric in candidate.score_breakdown %}
+          <div class="metric-card metric-{{ metric.tone }}">
+            <span class="metric-label">{{ metric.label }}</span>
+            <span class="metric-value">
+              {% if metric.value is not none %}{{ metric.value }}{% else %}--{% endif %}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+
+        {% if candidate.divergence_summary %}
+        <div class="section-label">Revisão humana sugerida</div>
+        <div class="snippet">
+          {{ candidate.divergence_summary }}
+        </div>
+        {% endif %}
+
+        {% if candidate.adaptive_blend_explanation %}
+        <div class="section-label">Explicação adaptativa</div>
+        <div class="snippet">
+          {{ candidate.adaptive_blend_explanation }}
+        </div>
+        {% endif %}
+
+        {% if candidate.llm_why or candidate.llm_title or candidate.llm_hook %}
+        <div class="section-label">Revisão LLM</div>
+        {% if candidate.llm_title %}
+        <div class="snippet" style="margin-bottom: 8px;">
+          <strong>Título sugerido:</strong> {{ candidate.llm_title }}
+        </div>
+        {% endif %}
+        {% if candidate.llm_hook %}
+        <div class="snippet" style="margin-bottom: 8px;">
+          <strong>Gancho sugerido:</strong> {{ candidate.llm_hook }}
+        </div>
+        {% endif %}
+        {% if candidate.llm_why %}
+        <div class="snippet">
+          <strong>Leitura editorial:</strong> {{ candidate.llm_why }}
+        </div>
+        {% endif %}
+        {% endif %}
 
         <div class="section-label">📌 Gancho inicial</div>
         <div class="snippet">
@@ -915,13 +1228,37 @@
 
         <div class="candidate-actions">
           <form method="post" action="/jobs/{{ job.id }}/view/render-candidate">
-            <input type="hidden" name="candidate_index" value="{{ loop.index0 }}">
+            <input type="hidden" name="candidate_id" value="{{ candidate.candidate_id }}">
             <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="render_preset" value="{{ render_preset }}">
             <div style="display: flex; align-items: center; gap: 8px;">
               <input type="checkbox" name="burn_subtitles" value="true" id="cb{{ loop.index0 }}">
               <label for="cb{{ loop.index0 }}" style="margin: 0; font-size: 12px;">Legenda</label>
             </div>
             <button type="submit">🎬 Renderizar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="status" value="approved">
+            <button type="submit">Aprovar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="status" value="rejected">
+            <button type="submit">Rejeitar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="status" value="pending">
+            <button type="submit">Resetar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/favorite">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <button type="submit">{% if candidate.is_favorite %}Desfavoritar{% else %}Favoritar{% endif %}</button>
           </form>
 
           <button type="button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end }}, '{{ mode }}')">
@@ -948,6 +1285,15 @@
             ▶ +5s fim
           </button>
         </div>
+
+        <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/notes" class="notes-form">
+          <input type="hidden" name="mode" value="{{ mode }}">
+          <label for="notes{{ candidate.candidate_id }}" style="font-size: 12px; color: #aaa;">Notas editoriais</label>
+          <textarea id="notes{{ candidate.candidate_id }}" name="editorial_notes" placeholder="Ex.: bom gancho, mas ajustar início em 3s...">{{ candidate.editorial_notes }}</textarea>
+          <div>
+            <button type="submit">Salvar nota</button>
+          </div>
+        </form>
       </div>
       {% endfor %}
     {% else %}
@@ -975,7 +1321,46 @@
           📌 {{ clip.source }}
           {% if clip.score is not none %}| ⭐ {{ clip.score }}{% endif %}
           | 📝 {% if clip.subtitles_burned %}sim{% else %}não{% endif %}
+          {% if clip.render_preset %}| 🎨 {{ clip.render_preset }}{% endif %}
+          | 🚀 {{ clip.publication_status }}
         </div>
+
+        <form method="post" action="/jobs/{{ job.id }}/view/clips/{{ clip.id }}/publication" class="form-group" style="margin-top: 10px;">
+          <input type="hidden" name="mode" value="{{ mode }}">
+          <input type="hidden" name="render_preset" value="{{ render_preset }}">
+          <div>
+            <label><strong>Status de publicação</strong></label>
+            <select name="status">
+              <option value="draft" {% if clip.publication_status == "draft" %}selected{% endif %}>Rascunho</option>
+              <option value="ready" {% if clip.publication_status == "ready" %}selected{% endif %}>Pronto</option>
+              <option value="published" {% if clip.publication_status == "published" %}selected{% endif %}>Publicado</option>
+              <option value="discarded" {% if clip.publication_status == "discarded" %}selected{% endif %}>Descartado</option>
+            </select>
+          </div>
+          <div>
+            <button type="submit">Atualizar publicação</button>
+          </div>
+        </form>
+
+        {% if clip.headline %}
+        <div class="section-label">Título sugerido</div>
+        <div class="snippet">{{ clip.headline }}</div>
+        {% endif %}
+
+        {% if clip.description %}
+        <div class="section-label">Descrição curta</div>
+        <div class="snippet">{{ clip.description }}</div>
+        {% endif %}
+
+        {% if clip.hashtags %}
+        <div class="section-label">Hashtags</div>
+        <div class="snippet">{{ clip.hashtags }}</div>
+        {% endif %}
+
+        {% if clip.suggested_filename %}
+        <div class="section-label">Nome de arquivo sugerido</div>
+        <div class="snippet">{{ clip.suggested_filename }}</div>
+        {% endif %}
 
         <p style="margin: 8px 0;">
           <a href="{{ build_static_url(clip.output_path) }}" target="_blank">🎬 Abrir clip</a>
@@ -992,6 +1377,27 @@
     {% else %}
       <div class="empty-state">
         🎬 Nenhum clip renderizado ainda.
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Pacotes exportados</h2>
+    {% if exports %}
+      {% for export in exports %}
+      <div class="export-item">
+        <p style="margin: 0 0 6px 0;"><strong>{{ export.name }}</strong></p>
+        <p style="margin: 0; color: #888; font-size: 12px;">
+          Atualizado em {{ export.modified_at }} | {{ export.size_bytes }} bytes
+        </p>
+        <p style="margin: 8px 0 0 0;">
+          <a href="/jobs/{{ job.id }}/export/files/{{ export.name }}" target="_blank">Baixar novamente</a>
+        </p>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        Nenhum pacote exportado ainda.
       </div>
     {% endif %}
   </div>

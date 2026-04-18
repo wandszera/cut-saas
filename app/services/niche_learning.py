@@ -133,6 +133,71 @@ def _collect_candidate_metrics(candidate: Candidate) -> dict[str, float]:
     }
 
 
+def _is_divergent_candidate(candidate: Candidate, threshold: float = 1.2) -> bool:
+    if candidate.llm_score is None or candidate.heuristic_score is None:
+        return False
+    return abs(float(candidate.heuristic_score) - float(candidate.llm_score)) >= threshold
+
+
+def _build_hybrid_weight_profile(positive_candidates: list[Candidate], negative_candidates: list[Candidate]) -> dict:
+    heuristic_evidence = 0
+    llm_evidence = 0
+    reviewed = 0
+    approved = 0
+    rejected = 0
+
+    for candidate in positive_candidates:
+        if not _is_divergent_candidate(candidate):
+            continue
+        reviewed += 1
+        approved += 1
+        if float(candidate.llm_score or 0.0) > float(candidate.heuristic_score or 0.0):
+            llm_evidence += 1
+        else:
+            heuristic_evidence += 1
+
+    for candidate in negative_candidates:
+        if not _is_divergent_candidate(candidate):
+            continue
+        reviewed += 1
+        rejected += 1
+        if float(candidate.llm_score or 0.0) > float(candidate.heuristic_score or 0.0):
+            heuristic_evidence += 1
+        else:
+            llm_evidence += 1
+
+    if reviewed == 0:
+        return {
+            "reviewed_count": 0,
+            "approved_count": 0,
+            "rejected_count": 0,
+            "preferred_source": "balanced",
+            "heuristic_weight": 0.65,
+            "llm_weight": 0.35,
+        }
+
+    evidence_gap = heuristic_evidence - llm_evidence
+    heuristic_weight = min(0.8, max(0.5, 0.65 + (evidence_gap * 0.05)))
+    llm_weight = round(1.0 - heuristic_weight, 2)
+    heuristic_weight = round(heuristic_weight, 2)
+
+    if evidence_gap >= 2:
+        preferred_source = "heuristic"
+    elif evidence_gap <= -2:
+        preferred_source = "llm"
+    else:
+        preferred_source = "balanced"
+
+    return {
+        "reviewed_count": reviewed,
+        "approved_count": approved,
+        "rejected_count": rejected,
+        "preferred_source": preferred_source,
+        "heuristic_weight": heuristic_weight,
+        "llm_weight": llm_weight,
+    }
+
+
 def get_feedback_profile_for_niche(
     db: Session,
     niche: str,
@@ -182,6 +247,7 @@ def get_feedback_profile_for_niche(
         "positive_means": {},
         "negative_means": {},
         "successful_keywords": [],
+        "hybrid_weight_profile": _build_hybrid_weight_profile(positive_candidates, negative_candidates),
     }
 
     if not profile["min_samples_reached"]:
@@ -204,3 +270,12 @@ def get_feedback_profile_for_niche(
         for keyword, _count in token_counter.most_common(12)
     ]
     return profile
+
+
+def get_hybrid_weights_for_niche(db: Session, niche: str, mode: str) -> dict[str, float]:
+    profile = get_feedback_profile_for_niche(db, niche, mode)
+    hybrid_profile = profile.get("hybrid_weight_profile", {})
+    return {
+        "heuristic_weight": float(hybrid_profile.get("heuristic_weight", 0.65) or 0.65),
+        "llm_weight": float(hybrid_profile.get("llm_weight", 0.35) or 0.35),
+    }

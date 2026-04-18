@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 
 from app.core.config import settings
+from app.services.render_presets import resolve_render_preset
 
 
 def _escape_subtitles_path_for_ffmpeg(path: str) -> str:
@@ -14,7 +15,10 @@ def _escape_subtitles_path_for_ffmpeg(path: str) -> str:
     return p
 
 
-def _build_short_filter(subtitles_path: str | None = None) -> str:
+def _build_short_filter(
+    subtitles_path: str | None = None,
+    blur_strength: str = "20:2",
+) -> str:
     """
     Short vertical com fundo blur + vídeo principal centralizado.
     """
@@ -22,7 +26,7 @@ def _build_short_filter(subtitles_path: str | None = None) -> str:
         # fundo vertical desfocado
         "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
         "crop=1080:1920,"
-        "boxblur=20:2[bg]",
+        f"boxblur={blur_strength}[bg]",
 
         # vídeo principal cabendo inteiro dentro do vertical
         "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg]",
@@ -60,6 +64,7 @@ def render_clip(
     mode: str = "short",
     burn_subtitles: bool = False,
     subtitles_path: str | None = None,
+    render_preset: str | None = None,
 ) -> str:
     video_file = Path(video_path)
     if not video_file.exists():
@@ -67,10 +72,12 @@ def render_clip(
 
     clips_dir = Path(settings.base_data_dir) / "clips" / f"job_{job_id}"
     clips_dir.mkdir(parents=True, exist_ok=True)
+    preset_name, preset = resolve_render_preset(render_preset)
 
     suffix = f"_{mode}"
     if burn_subtitles:
         suffix += "_subtitled"
+    suffix += f"_{preset_name}"
 
     output_path = clips_dir / f"clip_{clip_index + 1}{suffix}.mp4"
     duration = round(end - start, 2)
@@ -85,7 +92,8 @@ def render_clip(
 
     if mode == "short":
         filter_complex = _build_short_filter(
-            subtitles_path=subtitles_path if burn_subtitles else None
+            subtitles_path=subtitles_path if burn_subtitles else None,
+            blur_strength=preset["video"]["short"].get("blur_strength", "20:2"),
         )
         command += [
             "-filter_complex", filter_complex,

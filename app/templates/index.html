@@ -60,7 +60,7 @@
       color: #fff;
     }
 
-    input, button {
+    input, button, select {
       padding: 12px 16px;
       border-radius: 8px;
       border: 1px solid #333;
@@ -68,13 +68,13 @@
       transition: all 0.2s ease;
     }
 
-    input {
+    input, select {
       width: 100%;
       background: #252525;
       color: #fff;
     }
 
-    input:focus {
+    input:focus, select:focus {
       outline: none;
       border-color: #4da3ff;
       background: #2a2a2a;
@@ -257,6 +257,62 @@
       text-decoration: none;
     }
 
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .summary-card {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .summary-card strong {
+      display: block;
+      font-size: 24px;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .summary-card span {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .board-card {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .board-card h3 {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      color: #fff;
+    }
+
+    .board-item {
+      padding: 10px 0;
+      border-top: 1px solid #242424;
+    }
+
+    .board-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
     .empty-state {
       text-align: center;
       padding: 40px 20px;
@@ -281,6 +337,26 @@
 
     .input-group button {
       white-space: nowrap;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .header-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid #2f3b42;
+      background: #151d20;
+      color: #d9f7ea;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
     }
 
     @media (max-width: 768px) {
@@ -326,7 +402,10 @@
   <div class="container">
     <div class="header-bar">
       <h1>▶ Cut SaaS</h1>
-      <span style="color: #888; font-size: 14px; font-weight: 500;">Automação de Cortes Virais</span>
+      <div class="header-actions">
+        <a class="header-chip" href="/nichos">Gerenciar nichos</a>
+        <span style="color: #888; font-size: 14px; font-weight: 500;">Automação de Cortes Virais</span>
+      </div>
     </div>
 
     <div class="card">
@@ -335,10 +414,104 @@
         <input type="url" name="url" placeholder="Cole a URL do YouTube" required />
         <button type="submit">🔄 Processar Vídeo</button>
       </form>
+      <form method="post" action="/web/jobs/create-local" enctype="multipart/form-data" style="margin-top: 16px; display: grid; gap: 12px;">
+        <input type="file" name="video_file" accept="video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v" required />
+        <input type="text" name="title" placeholder="Titulo opcional para o job" />
+        <button type="submit">Selecionar e Analisar Video</button>
+      </form>
     </div>
 
     <div class="card">
       <h2>Dashboard de jobs</h2>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.total_jobs }}</strong>
+          <span>Jobs monitorados</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.active_jobs }}</strong>
+          <span>Em andamento</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.jobs_with_approved }}</strong>
+          <span>Com aprovados pendentes</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.jobs_with_clips }}</strong>
+          <span>Com clips gerados</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.jobs_with_exports }}</strong>
+          <span>Com export pronto</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.jobs_ready_to_publish }}</strong>
+          <span>Prontos para publicar</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ dashboard_summary.jobs_published }}</strong>
+          <span>Já publicados</span>
+        </div>
+      </div>
+      <div class="board-grid">
+        <div class="board-card">
+          <h3>Prontos para publicar</h3>
+          {% if publication_board.ready_jobs %}
+            {% for item in publication_board.ready_jobs %}
+            <div class="board-item">
+              <strong>#{{ item.job_id }} — {{ item.job_title }}</strong>
+              <p style="margin: 6px 0; color: #888; font-size: 12px;">{{ item.count }} clip(s) | {{ item.latest_headline }}</p>
+              <a href="/jobs/{{ item.job_id }}/view?clip_filter=ready">Abrir job</a>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state" style="padding: 12px 0;">
+              <p>Nada pronto no momento.</p>
+            </div>
+          {% endif %}
+        </div>
+        <div class="board-card">
+          <h3>Publicados recentemente</h3>
+          {% if publication_board.published_jobs %}
+            {% for item in publication_board.published_jobs %}
+            <div class="board-item">
+              <strong>#{{ item.job_id }} — {{ item.job_title }}</strong>
+              <p style="margin: 6px 0; color: #888; font-size: 12px;">{{ item.count }} clip(s) | {{ item.latest_headline }}</p>
+              <a href="/jobs/{{ item.job_id }}/view?clip_filter=published">Abrir job</a>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state" style="padding: 12px 0;">
+              <p>Nenhum publicado ainda.</p>
+            </div>
+          {% endif %}
+        </div>
+        <div class="board-card">
+          <h3>Descartados</h3>
+          {% if publication_board.discarded_jobs %}
+            {% for item in publication_board.discarded_jobs %}
+            <div class="board-item">
+              <strong>#{{ item.job_id }} — {{ item.job_title }}</strong>
+              <p style="margin: 6px 0; color: #888; font-size: 12px;">{{ item.count }} clip(s) | {{ item.latest_headline }}</p>
+              <a href="/jobs/{{ item.job_id }}/view">Revisar job</a>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state" style="padding: 12px 0;">
+              <p>Nenhum descartado.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+      <form method="get" action="/" class="input-group" style="margin-bottom: 16px;">
+        <select name="status_filter">
+          <option value="all" {% if status_filter == "all" %}selected{% endif %}>Todos</option>
+          <option value="active" {% if status_filter == "active" %}selected{% endif %}>Em andamento</option>
+          <option value="done" {% if status_filter == "done" %}selected{% endif %}>Concluídos</option>
+          <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Com falha</option>
+        </select>
+        <button type="submit">Filtrar</button>
+      </form>
 
       {% if recent_jobs %}
         {% for job in recent_jobs %}
@@ -374,10 +547,10 @@
             <div class="progress-wrap">
               <div class="progress-label">
                 <span>Progresso</span>
-                <span>{{ job.progress }}%</span>
+                <span>{{ job.progress_value or job.progress }}%</span>
               </div>
               <div class="progress-bar">
-                <div class="progress-fill" style="width: {{ job.progress }}%;"></div>
+                <div class="progress-fill" style="width: {{ job.progress_value or job.progress }}%;"></div>
               </div>
             </div>
             {% endif %}

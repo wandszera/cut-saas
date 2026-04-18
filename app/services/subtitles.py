@@ -1,8 +1,10 @@
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.services.render_presets import resolve_render_preset
 
 
 def _format_ass_timestamp(seconds: float) -> str:
@@ -84,53 +86,166 @@ def _wrap_text_ass(text: str, max_words_per_line: int) -> str:
     return r"\N".join(lines)
 
 
-def _get_layout_config(mode: str) -> dict[str, Any]:
+def _normalize_text(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (text or "").strip())
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    return cleaned
+
+
+def _chunk_words_balanced(
+    words: list[str],
+    *,
+    max_words_per_line: int,
+    max_chars_per_line: int,
+) -> list[list[str]]:
+    chunks: list[list[str]] = []
+    current: list[str] = []
+
+    for word in words:
+        proposed = current + [word]
+        proposed_text = " ".join(proposed)
+        if current and (
+            len(proposed) > max_words_per_line or len(proposed_text) > max_chars_per_line
+        ):
+            chunks.append(current)
+            current = [word]
+            continue
+        current = proposed
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+def _rebalance_last_chunks(chunks: list[list[str]], max_chars_per_line: int) -> list[list[str]]:
+    if len(chunks) < 2:
+        return chunks
+
+    previous = chunks[-2][:]
+    last = chunks[-1][:]
+    while len(" ".join(last)) < max(8, max_chars_per_line // 2) and len(previous) > 1:
+        last.insert(0, previous.pop())
+        if len(" ".join(previous)) > max_chars_per_line or len(" ".join(last)) > max_chars_per_line:
+            previous.append(last.pop(0))
+            break
+
+    chunks[-2] = previous
+    chunks[-1] = last
+    return chunks
+
+
+def _split_segment_text(
+    text: str,
+    *,
+    max_words_per_line: int,
+    max_chars_per_line: int,
+    max_lines: int,
+) -> list[str]:
+    cleaned = _normalize_text(text)
+    if not cleaned:
+        return []
+
+    phrase_parts = re.split(r"(?<=[,.;:!?])\s+", cleaned)
+    captions: list[str] = []
+    current_words: list[str] = []
+
+    def flush_words(buffer: list[str]) -> None:
+        if not buffer:
+            return
+        chunks = _chunk_words_balanced(
+            buffer,
+            max_words_per_line=max_words_per_line,
+            max_chars_per_line=max_chars_per_line,
+        )
+        chunks = _rebalance_last_chunks(chunks, max_chars_per_line)
+
+        for index in range(0, len(chunks), max_lines):
+            lines = [" ".join(chunk) for chunk in chunks[index:index + max_lines]]
+            captions.append(r"\N".join(lines))
+
+    for part in phrase_parts:
+        part_words = part.split()
+        if not part_words:
+            continue
+        proposed = current_words + part_words
+        proposed_chunks = _chunk_words_balanced(
+            proposed,
+            max_words_per_line=max_words_per_line,
+            max_chars_per_line=max_chars_per_line,
+        )
+        if current_words and len(proposed_chunks) > max_lines:
+            flush_words(current_words)
+            current_words = part_words
+        else:
+            current_words = proposed
+
+    flush_words(current_words)
+    return captions or [cleaned]
+
+
+def _escape_ass_text(text: str) -> str:
+    return text.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}")
+
+
+def _build_karaoke_text(text: str, duration_seconds: float) -> str:
+    parts = text.split(r"\N")
+    visible_words = []
+    for part in parts:
+        visible_words.extend(part.split())
+
+    if not visible_words:
+        return _escape_ass_text(text)
+
+    total_centis = max(1, int(round(duration_seconds * 100)))
+    base = total_centis // len(visible_words)
+    remainder = total_centis % len(visible_words)
+
+    durations = [base] * len(visible_words)
+    for index in range(remainder):
+        durations[index] += 1
+
+    duration_index = 0
+    karaoke_lines: list[str] = []
+    for part in parts:
+        line_words = part.split()
+        encoded_words = []
+        for word in line_words:
+            current_duration = durations[duration_index]
+            duration_index += 1
+            encoded_words.append(f"{{\\k{current_duration}}}{_escape_ass_text(word)}")
+        karaoke_lines.append(" ".join(encoded_words))
+
+    return r"\N".join(karaoke_lines)
+
+
+def _get_layout_config(mode: str, render_preset: str | None = None) -> dict[str, Any]:
     mode = mode.lower().strip()
+    preset_name, preset = resolve_render_preset(render_preset)
 
     if mode == "long":
+        style = preset["subtitles"]["long"]
         return {
             "play_res_x": 1920,
             "play_res_y": 1080,
-            "max_words_per_line": 6,
-            "style": {
-                "fontname": "Arial",
-                "fontsize": 34,
-                "primary_colour": "&H00FFFFFF",
-                "secondary_colour": "&H00FFFFFF",
-                "outline_colour": "&H00000000",
-                "back_colour": "&H46000000",
-                "bold": -1,
-                "italic": 0,
-                "outline": 3,
-                "shadow": 1,
-                "alignment": 2,
-                "margin_l": 50,
-                "margin_r": 50,
-                "margin_v": 40,
-            },
+            "max_words_per_line": style["max_words_per_line"],
+            "max_chars_per_line": style.get("max_chars_per_line", 28),
+            "max_lines": style.get("max_lines", 2),
+            "karaoke_enabled": style.get("karaoke_enabled", False),
+            "style": style,
+            "preset_name": preset_name,
         }
 
-    # short = vertical
+    style = preset["subtitles"]["short"]
     return {
         "play_res_x": 1080,
         "play_res_y": 1920,
-        "max_words_per_line": 4,
-        "style": {
-            "fontname": "Arial",
-            "fontsize": 54,
-            "primary_colour": "&H00FFFFFF",
-            "secondary_colour": "&H0000FFFF",
-            "outline_colour": "&H00000000",
-            "back_colour": "&H50000000",
-            "bold": -1,
-            "italic": 0,
-            "outline": 4,
-            "shadow": 1,
-            "alignment": 2,
-            "margin_l": 40,
-            "margin_r": 40,
-            "margin_v": 160,
-        },
+        "max_words_per_line": style["max_words_per_line"],
+        "max_chars_per_line": style.get("max_chars_per_line", 18),
+        "max_lines": style.get("max_lines", 2),
+        "karaoke_enabled": style.get("karaoke_enabled", False),
+        "style": style,
+        "preset_name": preset_name,
     }
 
 
@@ -141,6 +256,7 @@ def generate_ass_for_clip(
     clip_start: float,
     clip_end: float,
     mode: str = "short",
+    render_preset: str | None = None,
 ) -> str:
     subtitles_dir = Path(settings.base_data_dir) / "subtitles" / f"job_{job_id}"
     subtitles_dir.mkdir(parents=True, exist_ok=True)
@@ -153,7 +269,7 @@ def generate_ass_for_clip(
         clip_end=clip_end,
     )
 
-    layout = _get_layout_config(mode)
+    layout = _get_layout_config(mode, render_preset)
     style = layout["style"]
 
     header = f"""[Script Info]
@@ -177,16 +293,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(header)
 
         for item in selected:
-            start_ts = _format_ass_timestamp(item["start"])
-            end_ts = _format_ass_timestamp(item["end"])
-            text = _wrap_text_ass(
+            caption_blocks = _split_segment_text(
                 item["text"],
                 max_words_per_line=layout["max_words_per_line"],
+                max_chars_per_line=layout["max_chars_per_line"],
+                max_lines=layout["max_lines"],
             )
-            text = text.replace("{", r"\{").replace("}", r"\}")
+            if not caption_blocks:
+                continue
 
-            f.write(
-                f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text}\n"
-            )
+            segment_duration = max(item["end"] - item["start"], 0.01)
+            block_duration = segment_duration / len(caption_blocks)
+
+            for index, text in enumerate(caption_blocks):
+                block_start = item["start"] + (index * block_duration)
+                block_end = item["end"] if index == len(caption_blocks) - 1 else block_start + block_duration
+                start_ts = _format_ass_timestamp(block_start)
+                end_ts = _format_ass_timestamp(block_end)
+                safe_text = (
+                    _build_karaoke_text(text, block_end - block_start)
+                    if layout["karaoke_enabled"]
+                    else _escape_ass_text(text)
+                )
+                f.write(
+                    f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{safe_text}\n"
+                )
 
     return str(ass_path)

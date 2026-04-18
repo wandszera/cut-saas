@@ -1,7 +1,10 @@
 import re
 from collections import Counter
 
+from sqlalchemy.orm import Session
+
 from app.services.niche_profiles import NICHE_PROFILES
+from app.services.niche_registry import get_active_niche_profiles
 
 
 def _normalize(text: str) -> str:
@@ -15,13 +18,14 @@ def _count_keywords(text: str, keywords: list[str]) -> int:
     return sum(normalized.count(keyword.lower()) for keyword in keywords)
 
 
-def detect_niche(title: str | None, transcript_text: str | None) -> dict:
+def detect_niche(title: str | None, transcript_text: str | None, db: Session | None = None) -> dict:
     combined = f"{title or ''}\n{transcript_text or ''}"
     combined = _normalize(combined)
 
     niche_scores = {}
+    profiles = get_active_niche_profiles(db) if db is not None else NICHE_PROFILES
 
-    for niche, profile in NICHE_PROFILES.items():
+    for niche, profile in profiles.items():
         keywords = profile.get("keywords", [])
         score = _count_keywords(combined, keywords)
         niche_scores[niche] = score
