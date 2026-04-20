@@ -44,7 +44,7 @@ def analyze_transcript_context(title: str | None, transcript_text: str) -> dict:
         return {}
 
     prompt = _build_transcript_prompt(title, transcript_text)
-    parsed = generate_json_with_llm(prompt, timeout=60.0)
+    parsed = generate_json_with_llm(prompt, timeout=settings.llm_timeout_seconds)
     if not isinstance(parsed, dict):
         return {}
     return parsed

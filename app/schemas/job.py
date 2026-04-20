@@ -32,8 +32,8 @@ class RenderCandidateRequest(BaseModel):
 
 
 class ManualRenderRequest(BaseModel):
-    start: float = Field(..., ge=0)
-    end: float = Field(..., gt=0)
+    start: float | str
+    end: float | str
     burn_subtitles: bool = False
     mode: str = "short"
     render_preset: str = "clean"

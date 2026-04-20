@@ -817,15 +817,15 @@
         </div>
         <div class="hero-metrics">
           <div class="metric">
-            <strong>{{ dashboard_summary.total_jobs }}</strong>
+            <strong id="dashboard-total-jobs">{{ dashboard_summary.total_jobs }}</strong>
             <span>Jobs monitorados</span>
           </div>
           <div class="metric">
-            <strong>{{ dashboard_summary.jobs_with_clips }}</strong>
+            <strong id="dashboard-jobs-with-clips">{{ dashboard_summary.jobs_with_clips }}</strong>
             <span>Com clips gerados</span>
           </div>
           <div class="metric">
-            <strong>{{ dashboard_summary.jobs_published }}</strong>
+            <strong id="dashboard-jobs-published">{{ dashboard_summary.jobs_published }}</strong>
             <span>jobs já publicados</span>
           </div>
         </div>
@@ -854,12 +854,20 @@
           </p>
           <div class="kpi-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 0;">
             <div class="kpi-card">
-              <strong>{{ dashboard_summary.active_jobs }}</strong>
+              <strong id="dashboard-active-jobs">{{ dashboard_summary.active_jobs }}</strong>
               <span>em andamento</span>
             </div>
             <div class="kpi-card">
-              <strong>{{ dashboard_summary.jobs_with_exports }}</strong>
+              <strong id="dashboard-jobs-with-exports">{{ dashboard_summary.jobs_with_exports }}</strong>
               <span>Com export pronto</span>
+            </div>
+            <div class="kpi-card">
+              <strong id="pipeline-health-queued-jobs">{{ pipeline_health.queued_jobs }}</strong>
+              <span>na fila do motor</span>
+            </div>
+            <div class="kpi-card">
+              <strong id="pipeline-health-slowest-step-name">{% if pipeline_health.slowest_step_name %}{{ pipeline_health.slowest_step_name }}{% else %}--{% endif %}</strong>
+              <span id="pipeline-health-slowest-step-copy">{% if pipeline_health.slowest_step_seconds is not none %}etapa mais lenta ({{ pipeline_health.slowest_step_seconds }}s){% else %}sem historico suficiente{% endif %}</span>
             </div>
           </div>
         </section>
@@ -938,17 +946,32 @@
         <div class="ops-card">
           <strong>Exige a??o agora</strong>
           <p>Jobs com aprovados pendentes prontos para decis?o editorial ou render.</p>
-          <span>{{ dashboard_summary.jobs_with_approved }} fila(s) com decisao pendente</span>
+          <span id="ops-approved-pending">{{ dashboard_summary.jobs_with_approved }} fila(s) com decisao pendente</span>
         </div>
         <div class="ops-card">
           <strong>Motor ativo</strong>
           <p>Jobs ainda atravessando pipeline e que merecem acompanhamento ao vivo.</p>
-          <span>{{ dashboard_summary.active_jobs }} processamento(s) em andamento</span>
+          <span id="ops-active-jobs">{{ dashboard_summary.active_jobs }} processamento(s) em andamento</span>
+        </div>
+        <div class="ops-card">
+          <strong>Fila tecnica</strong>
+          <p>Jobs saudaveis que ainda nao iniciaram processamento pesado porque o motor esta ocupado.</p>
+          <span id="ops-queued-jobs">{{ pipeline_health.queued_jobs }} aguardando vaga no motor</span>
+        </div>
+        <div class="ops-card">
+          <strong>Heartbeat envelhecido</strong>
+          <p>Etapas em execucao sem sinal recente de vida e que merecem verificacao imediata.</p>
+          <span id="ops-stale-running">{{ pipeline_health.stale_running_steps }} etapa(s) com heartbeat velho</span>
+        </div>
+        <div class="ops-card">
+          <strong>Falhas e cancelamentos</strong>
+          <p>Visao rapida de backlog operacional para decidir onde atacar primeiro.</p>
+          <span id="ops-failed-canceled">{{ pipeline_health.failed_jobs }} falha(s) / {{ pipeline_health.canceled_jobs }} cancelado(s)</span>
         </div>
         <div class="ops-card">
           <strong>Pronto para publicar</strong>
           <p>Materiais que j? t?m clip em status final e podem seguir para distribui??o.</p>
-          <span>{{ dashboard_summary.jobs_ready_to_publish }} job(s) liberados</span>
+          <span id="ops-ready-to-publish">{{ dashboard_summary.jobs_ready_to_publish }} job(s) liberados</span>
         </div>
       </div>
 
@@ -1026,11 +1049,93 @@
       </form>
 
       {% if recent_jobs %}
-        {% set action_jobs = recent_jobs | selectattr("status", "equalto", "done") | list %}
-        {% set active_run_jobs = recent_jobs | rejectattr("status", "equalto", "done") | rejectattr("status", "equalto", "failed") | list %}
-        {% set failed_jobs = recent_jobs | selectattr("status", "equalto", "failed") | list %}
+        {% set stale_jobs = priority_groups.stale_jobs %}
+        {% set failed_jobs = priority_groups.failed_jobs %}
+        {% set queued_jobs = priority_groups.queued_jobs %}
+        {% set active_run_jobs = priority_groups.active_jobs %}
+        {% set action_jobs = priority_groups.completed_jobs %}
+        {% set canceled_jobs = priority_groups.canceled_jobs %}
 
         <div class="job-list">
+          {% if stale_jobs %}
+          <section class="job-group">
+            <div class="job-group-header">
+              <h3>Possivel travamento</h3>
+              <span>{{ stale_jobs|length }} job(ns) sem heartbeat recente</span>
+            </div>
+            {% for job in stale_jobs %}
+            <article class="job-card">
+              <div class="job-top">
+                <div>
+                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
+                  <p class="job-source">{{ job.source_value }}</p>
+                  <div class="job-meta">
+                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
+                    {% if job.updated_at %}
+                    <span>Atualizado h? {{ (now - job.updated_at).total_seconds() | int }}s</span>
+                    {% endif %}
+                  </div>
+                  <div class="job-stage-row">
+                    <span class="stage-chip">{{ job.status_label }}</span>
+                    <span class="action-chip action-danger">Verificar heartbeat</span>
+                  </div>
+                </div>
+                <div>
+                  <span class="status-badge status-failed">Aten??o</span>
+                </div>
+              </div>
+              {% if job.error_message %}
+              <div class="error-box">{{ job.error_message }}</div>
+              {% endif %}
+              <div class="job-actions">
+                <form method="post" action="/jobs/{{ job.id }}/view/retry">
+                  <button type="submit" class="ghost-button">Reprocessar job</button>
+                </form>
+                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
+              </div>
+            </article>
+            {% endfor %}
+          </section>
+          {% endif %}
+
+          {% if queued_jobs %}
+          <section class="job-group">
+            <div class="job-group-header">
+              <h3>Na fila tecnica</h3>
+              <span>{{ queued_jobs|length }} job(ns) aguardando slot</span>
+            </div>
+            {% for job in queued_jobs %}
+            <article class="job-card active-run">
+              <div class="job-top">
+                <div>
+                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
+                  <p class="job-source">{{ job.source_value }}</p>
+                  <div class="job-meta">
+                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
+                  </div>
+                  <div class="job-stage-row">
+                    <span class="stage-chip">{{ job.status_label }}</span>
+                    <span class="action-chip">Aguardando slot livre</span>
+                  </div>
+                </div>
+                <div>
+                  <span class="status-badge status-active">{{ job.status_label }}</span>
+                </div>
+              </div>
+              {% if job.error_message %}
+              <div class="error-box">{{ job.error_message }}</div>
+              {% endif %}
+              <div class="job-actions">
+                <form method="post" action="/jobs/{{ job.id }}/view/retry">
+                  <button type="submit" class="ghost-button">Tentar agora</button>
+                </form>
+                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
+              </div>
+            </article>
+            {% endfor %}
+          </section>
+          {% endif %}
+
           {% if action_jobs %}
           <section class="job-group">
             <div class="job-group-header">
@@ -1089,26 +1194,36 @@
                   </div>
                   <div class="job-stage-row">
                     <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip">Acompanhando pipeline</span>
+                    <span class="action-chip" data-job-action-chip="{{ job.id }}">{% if job.status == "pending" and job.error_message and "Aguardando vaga na fila" in job.error_message %}Aguardando slot livre{% else %}Acompanhando pipeline{% endif %}</span>
                   </div>
                 </div>
                 <div>
-                  <span class="status-badge status-active">{{ job.status_label }}</span>
+                  <span class="status-badge status-active" data-job-status-badge="{{ job.id }}">{{ job.status_label }}</span>
                 </div>
               </div>
               <div class="progress-wrap">
                 <div class="progress-label">
                   <span>Progresso do pipeline</span>
-                  <span>{{ job.progress_value or job.progress }}%</span>
+                  <span data-job-progress-label="{{ job.id }}">{{ job.progress_value or job.progress }}%</span>
                 </div>
                 <div class="progress-bar">
-                  <div class="progress-fill" style="width: {{ job.progress_value or job.progress }}%;"></div>
+                  <div class="progress-fill" data-job-progress-fill="{{ job.id }}" style="width: {{ job.progress_value or job.progress }}%;"></div>
                 </div>
               </div>
               {% if job.error_message %}
-              <div class="error-box">{{ job.error_message }}</div>
+              <div class="error-box" data-job-error-box="{{ job.id }}">{{ job.error_message }}</div>
               {% endif %}
               <div class="job-actions">
+                <form method="post" action="/jobs/{{ job.id }}/view/cancel">
+                  <input type="hidden" name="mode" value="short">
+                  <button type="submit" class="ghost-button">Cancelar processamento</button>
+                </form>
+                {% if job.status == "llm_enrichment" %}
+                <form method="post" action="/jobs/{{ job.id }}/view/analyze-without-llm">
+                  <input type="hidden" name="mode" value="short">
+                  <button type="submit" class="ghost-button">Concluir sem LLM</button>
+                </form>
+                {% endif %}
                 <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
               </div>
             </article>
@@ -1147,6 +1262,44 @@
               <div class="error-box">{{ job.error_message }}</div>
               {% endif %}
               <div class="job-actions">
+                <form method="post" action="/jobs/{{ job.id }}/view/retry">
+                  <button type="submit" class="ghost-button">Reprocessar job</button>
+                </form>
+                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
+              </div>
+            </article>
+            {% endfor %}
+          </section>
+          {% endif %}
+
+          {% if canceled_jobs %}
+          <section class="job-group">
+            <div class="job-group-header">
+              <h3>Cancelados</h3>
+              <span>{{ canceled_jobs|length }} job(ns) encerrados manualmente</span>
+            </div>
+            {% for job in canceled_jobs %}
+            <article class="job-card">
+              <div class="job-top">
+                <div>
+                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
+                  <p class="job-source">{{ job.source_value }}</p>
+                  <div class="job-meta">
+                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
+                  </div>
+                  <div class="job-stage-row">
+                    <span class="stage-chip">{{ job.status_label }}</span>
+                    <span class="action-chip">Encerrado pelo operador</span>
+                  </div>
+                </div>
+                <div>
+                  <span class="status-badge status-failed">{{ job.status_label }}</span>
+                </div>
+              </div>
+              <div class="job-actions">
+                <form method="post" action="/jobs/{{ job.id }}/view/retry">
+                  <button type="submit" class="ghost-button">Reprocessar job</button>
+                </form>
                 <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
               </div>
             </article>
@@ -1164,13 +1317,94 @@
   {% if auto_refresh %}
   <script>
     window.addEventListener("DOMContentLoaded", () => {
+      const dashboardMonitorEndpoint = "/jobs/dashboard/monitor";
       const countdown = document.getElementById("refresh-countdown");
-      if (!countdown) return;
       let remaining = 15;
+
+      function setText(id, value) {
+        const element = document.getElementById(id);
+        if (!element) return;
+        element.textContent = String(value ?? "");
+      }
+
+      function setJobStatus(job) {
+        const statusBadge = document.querySelector(`[data-job-status-badge="${job.id}"]`);
+        const actionChip = document.querySelector(`[data-job-action-chip="${job.id}"]`);
+        const errorBox = document.querySelector(`[data-job-error-box="${job.id}"]`);
+        const progressLabel = document.querySelector(`[data-job-progress-label="${job.id}"]`);
+        const progressFill = document.querySelector(`[data-job-progress-fill="${job.id}"]`);
+
+        if (statusBadge) {
+          statusBadge.textContent = job.status_label || job.status || "";
+        }
+        if (actionChip) {
+          actionChip.textContent =
+            job.status === "pending" && String(job.error_message || "").startsWith("Aguardando vaga na fila")
+              ? "Aguardando slot livre"
+              : "Acompanhando pipeline";
+        }
+        if (errorBox) {
+          errorBox.textContent = job.error_message || "";
+          errorBox.style.display = job.error_message ? "" : "none";
+        }
+        if (progressLabel) {
+          progressLabel.textContent = `${Number(job.progress ?? 0)}%`;
+        }
+        if (progressFill) {
+          progressFill.style.width = `${Number(job.progress ?? 0)}%`;
+        }
+      }
+
+      async function refreshDashboardMonitor() {
+        const response = await fetch(dashboardMonitorEndpoint, { headers: { Accept: "application/json" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const summary = payload.summary || {};
+        const health = payload.pipeline_health || {};
+
+        setText("dashboard-total-jobs", summary.total_jobs);
+        setText("dashboard-jobs-with-clips", summary.jobs_with_clips);
+        setText("dashboard-jobs-published", summary.jobs_published);
+        setText("dashboard-queued-jobs", summary.queued_jobs);
+        setText("dashboard-active-jobs", summary.active_jobs);
+        setText("dashboard-jobs-with-exports", summary.jobs_with_exports);
+        setText("pipeline-health-queued-jobs", health.jobs ? health.jobs.queued : "");
+        setText("ops-active-jobs", `${summary.active_jobs ?? 0} processamento(s) em andamento`);
+        setText("ops-queued-jobs", `${health.jobs ? health.jobs.queued : 0} aguardando vaga no motor`);
+        setText("ops-stale-running", `${health.steps ? health.steps.stale_running : 0} etapa(s) com heartbeat velho`);
+        setText("ops-failed-canceled", `${health.jobs ? health.jobs.failed : 0} falha(s) / ${health.jobs ? health.jobs.canceled : 0} cancelado(s)`);
+        setText("ops-ready-to-publish", `${summary.jobs_ready_to_publish ?? 0} job(s) liberados`);
+        const approvedPending = document.getElementById("ops-approved-pending");
+        if (approvedPending) {
+          approvedPending.textContent = `${payload.summary?.jobs_with_approved ?? 0} fila(s) com decisao pendente`;
+        }
+
+        const slowestName = document.getElementById("pipeline-health-slowest-step-name");
+        if (slowestName) {
+          const averageDurations = health.steps?.average_duration_seconds || {};
+          const entries = Object.entries(averageDurations);
+          if (entries.length) {
+            entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+            slowestName.textContent = entries[0][0];
+            setText("pipeline-health-slowest-step-copy", `etapa mais lenta (${entries[0][1]}s)`);
+          } else {
+            slowestName.textContent = "--";
+            setText("pipeline-health-slowest-step-copy", "sem historico suficiente");
+          }
+        }
+
+        for (const job of payload.jobs || []) {
+          setJobStatus(job);
+        }
+      }
+
       const tick = () => {
-        countdown.textContent = `${remaining}s`;
+        if (countdown) {
+          countdown.textContent = `${remaining}s`;
+        }
         if (remaining <= 0) {
-          window.location.reload();
+          refreshDashboardMonitor().catch(() => {});
+          remaining = 15;
           return;
         }
         remaining -= 1;

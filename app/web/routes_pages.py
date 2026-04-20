@@ -1,6 +1,6 @@
 import json
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -22,6 +22,7 @@ from app.services.niche_learning import (
     get_learned_keywords_for_niche,
     learn_keywords_for_niche,
 )
+from app.services.analysis_calibration import build_analysis_calibration_profile
 from app.services.niche_registry import (
     approve_niche,
     archive_niche,
@@ -30,7 +31,13 @@ from app.services.niche_registry import (
     list_niche_definitions,
     reject_niche,
 )
-from app.services.pipeline import MAX_STEP_ATTEMPTS, get_job_steps, process_job_pipeline
+from app.services.pipeline import (
+    MAX_STEP_ATTEMPTS,
+    complete_analysis_without_llm,
+    get_job_steps,
+    process_job_pipeline,
+    request_job_cancellation,
+)
 from app.services.render_presets import DEFAULT_PRESET, list_render_presets
 from app.services.render_workflow import render_candidate_clip, render_manual_clip
 from app.services.serializers import serialize_candidate, serialize_clip
@@ -38,10 +45,23 @@ from app.services.system_diagnostics import build_system_diagnostics
 from app.services.scoring import score_candidates
 from app.services.segmentation import build_candidate_windows, load_segments
 from app.utils.media_urls import build_static_url
+from app.utils.timecodes import parse_timecode_to_seconds
 
 
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory="app/templates")
+STEP_STALE_HEARTBEAT_SECONDS = 900
+JOB_AUTO_REFRESH_STATUSES = {
+    "pending",
+    "downloading",
+    "extracting_audio",
+    "transcribing",
+    "analyzing",
+    "llm_enrichment",
+    "rendering",
+    "cancel_requested",
+}
+JOB_AUTO_REFRESH_INTERVAL_MS = 15000
 
 
 def has_active_jobs(jobs: list[Job]) -> bool:
@@ -51,7 +71,9 @@ def has_active_jobs(jobs: list[Job]) -> bool:
         "extracting_audio",
         "transcribing",
         "analyzing",
+        "llm_enrichment",
         "rendering",
+        "cancel_requested",
     }
     return any(job.status in active_statuses for job in jobs)
 
@@ -67,6 +89,35 @@ PIPELINE_STEP_SEQUENCE = (
 def _normalize_mode(mode: str) -> str:
     normalized = mode.lower().strip()
     return normalized if normalized in {"short", "long"} else "short"
+
+
+def _parse_step_details(raw_details: str | None) -> dict:
+    if not raw_details:
+        return {}
+    try:
+        payload = json.loads(raw_details)
+    except json.JSONDecodeError:
+        return {"raw_details": raw_details}
+    return payload if isinstance(payload, dict) else {"value": payload}
+
+
+def _heartbeat_age_seconds(raw_value: str | None) -> float | None:
+    if not raw_value:
+        return None
+    try:
+        heartbeat_dt = datetime.fromisoformat(str(raw_value))
+    except ValueError:
+        return None
+    if heartbeat_dt.tzinfo is not None:
+        heartbeat_dt = heartbeat_dt.astimezone(UTC).replace(tzinfo=None)
+    return (datetime.utcnow() - heartbeat_dt).total_seconds()
+
+
+def _build_timecode_from_parts(hours: str | None, minutes: str | None, seconds: str | None) -> str:
+    hour_value = (hours or "").strip() or "0"
+    minute_value = (minutes or "").strip() or "0"
+    second_value = (seconds or "").strip() or "0"
+    return f"{hour_value}:{minute_value}:{second_value}"
 
 
 def _get_candidate_or_404(db: Session, candidate_id: int) -> Candidate:
@@ -104,6 +155,7 @@ def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     learned_keywords = get_learned_keywords_for_niche(db, niche)
     feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
     transcript_insights = json.loads(job.transcript_insights) if job.transcript_insights else None
+    calibration_profile = build_analysis_calibration_profile(db, niche=niche, mode=mode)
     return score_candidates(
         candidates,
         mode=mode,
@@ -112,6 +164,7 @@ def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
         learned_keywords=learned_keywords,
         feedback_profile=feedback_profile,
         transcript_insights=transcript_insights,
+        calibration_profile=calibration_profile,
     )
 
 
@@ -124,6 +177,19 @@ def _ensure_page_candidates(
     if saved_candidates:
         return saved_candidates
     return regenerate_candidates_for_job(db, job, mode=mode)
+
+
+def _get_candidates_for_job_view(
+    db: Session,
+    job: Job,
+    mode: str,
+) -> list[Candidate]:
+    saved_candidates = get_candidates_for_job(db, job.id, mode)
+    if saved_candidates:
+        return saved_candidates
+    if job.status == "done" and job.transcript_path and Path(job.transcript_path).exists():
+        return regenerate_candidates_for_job(db, job, mode=mode)
+    return []
 
 
 def format_seconds_to_mmss(seconds: float | int | None) -> str:
@@ -233,6 +299,9 @@ def build_dashboard_summary(db: Session, jobs: list[Job]) -> dict:
         return {
             "total_jobs": 0,
             "active_jobs": 0,
+            "queued_jobs": 0,
+            "failed_jobs": 0,
+            "canceled_jobs": 0,
             "jobs_with_approved": 0,
             "jobs_with_clips": 0,
             "jobs_with_exports": 0,
@@ -256,11 +325,124 @@ def build_dashboard_summary(db: Session, jobs: list[Job]) -> dict:
     return {
         "total_jobs": len(jobs),
         "active_jobs": sum(1 for job in jobs if job.status not in {"done", "failed"}),
+        "queued_jobs": sum(
+            1
+            for job in jobs
+            if job.status == "pending" and (job.error_message or "").startswith("Aguardando vaga na fila")
+        ),
+        "failed_jobs": sum(1 for job in jobs if job.status == "failed"),
+        "canceled_jobs": sum(1 for job in jobs if job.status == "canceled"),
         "jobs_with_approved": len(jobs_with_approved),
         "jobs_with_clips": len(jobs_with_clips),
         "jobs_with_exports": len(jobs_with_exports),
         "jobs_ready_to_publish": len(jobs_ready_to_publish),
         "jobs_published": len(jobs_published),
+    }
+
+
+def build_pipeline_health_summary(db: Session, jobs: list[Job]) -> dict:
+    job_ids = [job.id for job in jobs]
+    step_rows = []
+    if job_ids:
+        step_rows = db.query(JobStep).filter(JobStep.job_id.in_(job_ids)).all()
+
+    durations_by_step: dict[str, list[float]] = {}
+    stale_running_steps = 0
+    for step in step_rows:
+        details = _parse_step_details(step.details)
+        duration = details.get("duration_seconds")
+        if isinstance(duration, (int, float)):
+            durations_by_step.setdefault(step.step_name, []).append(float(duration))
+        age_seconds = _heartbeat_age_seconds(details.get("heartbeat_at"))
+        if step.status == "running" and age_seconds is not None and age_seconds >= STEP_STALE_HEARTBEAT_SECONDS:
+            stale_running_steps += 1
+
+    average_durations = {
+        step_name: round(sum(values) / len(values), 1)
+        for step_name, values in durations_by_step.items()
+        if values
+    }
+
+    longest_step = None
+    if average_durations:
+        longest_step = max(average_durations.items(), key=lambda item: item[1])
+
+    queued_jobs = [
+        job for job in jobs
+        if job.status == "pending" and (job.error_message or "").startswith("Aguardando vaga na fila")
+    ]
+    return {
+        "queued_jobs": len(queued_jobs),
+        "active_jobs": sum(
+            1
+            for job in jobs
+            if job.status in {"downloading", "extracting_audio", "transcribing", "analyzing", "llm_enrichment", "cancel_requested"}
+        ),
+        "canceled_jobs": sum(1 for job in jobs if job.status == "canceled"),
+        "failed_jobs": sum(1 for job in jobs if job.status == "failed"),
+        "avg_transcribing_seconds": average_durations.get("transcribing"),
+        "avg_analyzing_seconds": average_durations.get("analyzing"),
+        "avg_llm_seconds": average_durations.get("llm_enrichment"),
+        "slowest_step_name": longest_step[0] if longest_step else None,
+        "slowest_step_seconds": longest_step[1] if longest_step else None,
+        "stale_running_steps": stale_running_steps,
+    }
+
+
+def build_job_priority_groups(db: Session, jobs: list[Job]) -> dict[str, list[Job]]:
+    if not jobs:
+        return {
+            "stale_jobs": [],
+            "failed_jobs": [],
+            "queued_jobs": [],
+            "active_jobs": [],
+            "completed_jobs": [],
+            "canceled_jobs": [],
+        }
+
+    job_ids = [job.id for job in jobs]
+    step_rows = (
+        db.query(JobStep)
+        .filter(JobStep.job_id.in_(job_ids))
+        .order_by(JobStep.created_at.asc(), JobStep.id.asc())
+        .all()
+    )
+
+    stale_job_ids: set[int] = set()
+    for step in step_rows:
+        details = _parse_step_details(step.details)
+        heartbeat_at = details.get("heartbeat_at")
+        if step.status != "running" or not heartbeat_at:
+            continue
+        age_seconds = _heartbeat_age_seconds(heartbeat_at)
+        if age_seconds is not None and age_seconds >= STEP_STALE_HEARTBEAT_SECONDS:
+            stale_job_ids.add(step.job_id)
+
+    stale_jobs = [job for job in jobs if job.id in stale_job_ids]
+    failed_jobs = [job for job in jobs if job.status == "failed" and job.id not in stale_job_ids]
+    queued_jobs = [
+        job for job in jobs
+        if job.status == "pending"
+        and (job.error_message or "").startswith("Aguardando vaga na fila")
+        and job.id not in stale_job_ids
+    ]
+    canceled_jobs = [job for job in jobs if job.status == "canceled"]
+    active_jobs = [
+        job for job in jobs
+        if job.status in {"pending", "downloading", "extracting_audio", "transcribing", "analyzing", "llm_enrichment", "cancel_requested", "rendering"}
+        and job.id not in stale_job_ids
+        and job.status != "failed"
+        and not ((job.error_message or "").startswith("Aguardando vaga na fila") and job.status == "pending")
+    ]
+    completed_jobs = [job for job in jobs if job.status == "done"]
+
+    return {
+        "stale_jobs": stale_jobs,
+        "failed_jobs": failed_jobs,
+        "queued_jobs": queued_jobs,
+        "active_jobs": active_jobs,
+        "completed_jobs": completed_jobs,
+        "canceled_jobs": canceled_jobs,
     }
 
 
@@ -553,6 +735,13 @@ def enrich_steps_for_view(steps: list) -> list[dict]:
             status_label = "Tentativas esgotadas"
         else:
             status_label = "Pendente"
+        if step.step_name == "llm_enrichment":
+            if status == "completed":
+                status_label = "Enriquecimento concluido"
+            elif status == "running":
+                status_label = "Enriquecendo com LLM"
+            elif status == "skipped":
+                status_label = "LLM pulada"
 
         try:
             details_payload = json.loads(step.details) if step.details else {}
@@ -568,6 +757,20 @@ def enrich_steps_for_view(steps: list) -> list[dict]:
             if isinstance(duration_seconds, (int, float))
             else None
         )
+        heartbeat_at = details_payload.get("heartbeat_at")
+        progress_message = details_payload.get("progress_message")
+        progress_percent = details_payload.get("progress_percent")
+        heartbeat_age_seconds = None
+        heartbeat_is_stale = False
+        if heartbeat_at and status == "running":
+            try:
+                heartbeat_dt = datetime.fromisoformat(str(heartbeat_at).replace("Z", "+00:00"))
+                now = datetime.now(heartbeat_dt.tzinfo) if heartbeat_dt.tzinfo else datetime.utcnow()
+                heartbeat_age_seconds = max(0, round((now - heartbeat_dt).total_seconds()))
+                heartbeat_is_stale = heartbeat_age_seconds >= STEP_STALE_HEARTBEAT_SECONDS
+            except ValueError:
+                heartbeat_age_seconds = None
+                heartbeat_is_stale = False
 
         summary_items = []
         reason = details_payload.get("reason")
@@ -581,9 +784,16 @@ def enrich_steps_for_view(steps: list) -> list[dict]:
         if details_payload.get("forced") is True:
             summary_items.append("Execução forçada")
 
+        if progress_message and status == "running":
+            summary_items.append(f"Atividade: {progress_message}")
+        if heartbeat_at and status == "running":
+            summary_items.append(f"Ultima atividade: {heartbeat_at}")
+        if heartbeat_is_stale:
+            summary_items.append("Possivel travamento detectado")
+
         detail_items = []
         for key, value in details_payload.items():
-            if key in {"reason", "attempt", "duration_seconds", "forced"}:
+            if key in {"reason", "attempt", "duration_seconds", "forced", "progress_message", "heartbeat_at", "progress_percent"}:
                 continue
             if value in (None, "", [], {}):
                 continue
@@ -604,6 +814,11 @@ def enrich_steps_for_view(steps: list) -> list[dict]:
                 "summary_items": summary_items,
                 "duration_seconds": duration_seconds,
                 "duration_label": duration_label,
+                "progress_message": progress_message,
+                "progress_percent": progress_percent,
+                "heartbeat_at": heartbeat_at,
+                "heartbeat_age_seconds": heartbeat_age_seconds,
+                "heartbeat_is_stale": heartbeat_is_stale,
                 "started_at": step.started_at,
                 "completed_at": step.completed_at,
                 "can_retry": status in {"failed", "pending"},
@@ -700,6 +915,8 @@ def home(
     filtered_jobs = filter_jobs_for_view(recent_jobs, status_filter)
     filtered_jobs = search_jobs_for_view(filtered_jobs, search_query)
     dashboard_summary = build_dashboard_summary(db, recent_jobs)
+    pipeline_health = build_pipeline_health_summary(db, recent_jobs)
+    priority_groups = build_job_priority_groups(db, filtered_jobs)
     publication_board = build_publication_board(db, recent_jobs)
 
     return templates.TemplateResponse(
@@ -710,8 +927,10 @@ def home(
             "status_filter": status_filter,
             "search_query": search_query,
             "dashboard_summary": dashboard_summary,
+            "pipeline_health": pipeline_health,
+            "priority_groups": priority_groups,
             "publication_board": publication_board,
-            "now": datetime.utcnow(),
+            "now": datetime.now(),
             "auto_refresh": has_active_jobs(filtered_jobs),
         },
     )
@@ -943,6 +1162,56 @@ def recalibrate_feedback_from_page(
     )
 
 
+@router.post("/jobs/{job_id}/view/analyze-without-llm")
+def analyze_without_llm_from_page(
+    job_id: int,
+    mode: str = Form("short"),
+    db: Session = Depends(get_db),
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job nÃ£o encontrado")
+    if not job.video_path or not job.transcript_path:
+        raise HTTPException(status_code=400, detail="Job precisa de video e transcricao para concluir a analise sem LLM")
+
+    normalized_mode = _normalize_mode(mode)
+    complete_analysis_without_llm(db, job, force=True)
+
+    return RedirectResponse(
+        url=_job_view_url(
+            job.id,
+            mode=normalized_mode,
+            message="Analise concluida sem LLM.",
+        ),
+        status_code=303,
+    )
+
+
+@router.post("/jobs/{job_id}/view/cancel")
+def cancel_job_from_page(
+    job_id: int,
+    mode: str = Form("short"),
+    render_preset: str = Form(DEFAULT_PRESET),
+    db: Session = Depends(get_db),
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    request_job_cancellation(db, job)
+    normalized_mode = _normalize_mode(mode)
+    return RedirectResponse(
+        url=_job_view_url(
+            job.id,
+            mode=normalized_mode,
+            render_preset=render_preset,
+            message="Cancelamento solicitado. O worker vai encerrar na proxima verificacao segura.",
+            level="warning",
+        ),
+        status_code=303,
+    )
+
+
 @router.get("/jobs/{job_id}/view")
 def job_detail(
     job_id: int,
@@ -966,9 +1235,11 @@ def job_detail(
     feedback_profile = None
     candidates_missing = False
     transcript_insights = enrich_transcript_insights_for_view(job.transcript_insights)
-    if job.transcript_path and job.status == "done":
+    candidates_total_count = 0
+    if job.transcript_path and job.status in {"analyzing", "llm_enrichment", "done"}:
         feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", normalized_mode)
-        saved_candidates = _ensure_page_candidates(db, job, normalized_mode)
+        saved_candidates = _get_candidates_for_job_view(db, job, normalized_mode)
+        candidates_total_count = len(saved_candidates)
         candidates_missing = not bool(saved_candidates)
         if saved_candidates:
             candidates = enrich_candidates_for_view(
@@ -1009,6 +1280,7 @@ def job_detail(
     if export_filter == "latest":
         exports = exports[:1]
     steps = get_job_steps(db, job.id)
+    queue_waiting = job.status == "pending" and (job.error_message or "").startswith("Aguardando vaga na fila")
 
     return templates.TemplateResponse(
         request,
@@ -1019,6 +1291,7 @@ def job_detail(
             "render_preset": render_preset,
             "candidate_filter": candidate_filter,
             "candidate_sort": candidate_sort,
+            "candidates_total_count": candidates_total_count,
             "clip_filter": clip_filter,
             "export_filter": export_filter,
             "render_presets": list_render_presets(),
@@ -1026,12 +1299,15 @@ def job_detail(
             "clips": enrich_clips_for_view(clips),
             "exports": exports,
             "steps": enrich_steps_for_view(steps),
+            "queue_waiting": queue_waiting,
             "feedback_profile": enrich_feedback_profile_for_view(feedback_profile),
             "candidates_missing": candidates_missing,
             "transcript_insights": transcript_insights,
             "video_url": build_static_url(job.video_path),
             "audio_url": build_static_url(job.audio_path),
             "transcript_url": build_static_url(job.transcript_path),
+            "auto_refresh_enabled": job.status in JOB_AUTO_REFRESH_STATUSES,
+            "auto_refresh_interval_ms": JOB_AUTO_REFRESH_INTERVAL_MS,
             "flash": {"message": message, "level": message_level} if message else None,
             "build_static_url": build_static_url,
         },
@@ -1050,7 +1326,7 @@ def render_candidate_from_page(
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
-    if not job.video_path or not job.transcript_path:
+    if not job.video_path:
         raise HTTPException(status_code=400, detail="Job incompleto")
 
     normalized_mode = _normalize_mode(mode)
@@ -1286,7 +1562,7 @@ def render_approved_from_page(
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
-    if not job.video_path or not job.transcript_path:
+    if not job.video_path:
         raise HTTPException(status_code=400, detail="Job incompleto")
 
     normalized_mode = _normalize_mode(mode)
@@ -1327,8 +1603,14 @@ def render_approved_from_page(
 @router.post("/jobs/{job_id}/view/render-manual")
 def render_manual_from_page(
     job_id: int,
-    start: float = Form(...),
-    end: float = Form(...),
+    start: str = Form(""),
+    end: str = Form(""),
+    start_hours: str = Form(""),
+    start_minutes: str = Form(""),
+    start_seconds: str = Form(""),
+    end_hours: str = Form(""),
+    end_minutes: str = Form(""),
+    end_seconds: str = Form(""),
     mode: str = Form(...),
     render_preset: str = Form(DEFAULT_PRESET),
     burn_subtitles: str | None = Form(None),
@@ -1337,20 +1619,38 @@ def render_manual_from_page(
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
-    if not job.video_path or not job.transcript_path:
+    if not job.video_path:
         raise HTTPException(status_code=400, detail="Job incompleto")
 
     normalized_mode = _normalize_mode(mode)
-    if end <= start:
+    start_value = start.strip() or _build_timecode_from_parts(start_hours, start_minutes, start_seconds)
+    end_value = end.strip() or _build_timecode_from_parts(end_hours, end_minutes, end_seconds)
+    try:
+        start_seconds = parse_timecode_to_seconds(start_value)
+        end_seconds = parse_timecode_to_seconds(end_value)
+    except ValueError:
+        return RedirectResponse(
+            url=_job_view_url(
+                job.id,
+                mode=normalized_mode,
+                render_preset=render_preset,
+                message="Tempo invalido. Use segundos, mm:ss ou hh:mm:ss.",
+                level="error",
+            ),
+            status_code=303,
+        )
+
+    if end_seconds <= start_seconds:
         raise HTTPException(status_code=400, detail="end deve ser maior que start")
 
-    burn_subtitles_bool = burn_subtitles is not None
+    subtitles_requested = burn_subtitles is not None
+    burn_subtitles_bool = subtitles_requested and bool(job.transcript_path)
 
     clip, _subtitles_path, _output_path = render_manual_clip(
         db=db,
         job=job,
-        start=start,
-        end=end,
+        start=start_seconds,
+        end=end_seconds,
         mode=normalized_mode,
         burn_subtitles=burn_subtitles_bool,
         render_preset=render_preset,
@@ -1359,12 +1659,19 @@ def render_manual_from_page(
     )
     db.commit()
 
+    flash_message = "Render concluido com sucesso."
+    flash_level = "success"
+    if subtitles_requested and not job.transcript_path:
+        flash_message = "Render concluido sem legenda embutida porque este job ainda nao possui transcricao."
+        flash_level = "warning"
+
     return RedirectResponse(
         url=_job_view_url(
             job.id,
             mode=normalized_mode,
             render_preset=render_preset,
-            message="Render concluido com sucesso.",
+            message=flash_message,
+            level=flash_level,
         ),
         status_code=303,
     )

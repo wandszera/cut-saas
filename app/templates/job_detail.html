@@ -233,6 +233,12 @@
       color: #ffe4e5;
     }
 
+    .flash-warning {
+      border-color: rgba(255, 211, 123, 0.24);
+      background: rgba(255, 211, 123, 0.1);
+      color: #fff0cf;
+    }
+
     .flash-banner strong {
       font-size: 13px;
       letter-spacing: 0.08em;
@@ -408,6 +414,12 @@
       background: rgba(255, 155, 157, 0.12);
       color: #ffd0d2;
       border: 1px solid rgba(255, 155, 157, 0.16);
+    }
+
+    .status-canceling {
+      background: rgba(255, 211, 123, 0.12);
+      color: #ffe7b7;
+      border: 1px solid rgba(255, 211, 123, 0.2);
     }
 
     @keyframes pulse {
@@ -1060,9 +1072,9 @@
 <body>
   <div class="page">
   {% if flash %}
-  <div id="flash-banner" data-level="{{ flash.level }}" class="flash-banner {% if flash.level == 'error' %}flash-error{% else %}flash-success{% endif %}">
+  <div id="flash-banner" data-level="{{ flash.level }}" class="flash-banner {% if flash.level == 'error' %}flash-error{% elif flash.level == 'warning' %}flash-warning{% else %}flash-success{% endif %}">
     <div class="flash-copy">
-      <strong>{% if flash.level == "error" %}Erro{% else %}Sucesso{% endif %}</strong>
+      <strong>{% if flash.level == "error" %}Erro{% elif flash.level == "warning" %}Aviso{% else %}Sucesso{% endif %}</strong>
       <span>{{ flash.message }}</span>
     </div>
     <button type="button" class="flash-close" aria-label="Fechar aviso" onclick="dismissFlashBanner()">×</button>
@@ -1098,6 +1110,7 @@
       </div>
       <div style="text-align: right;">
         <p style="margin: 0;"><strong>Status:</strong></p>
+        <div id="job-status-badge">
         {% if job.status == "done" %}
           <span class="status-badge status-done">✓ Concluído</span>
         {% elif job.status == "failed" %}
@@ -1112,39 +1125,52 @@
           <span class="status-badge status-transcribing">✍️ Transcrevendo...</span>
         {% elif job.status == "analyzing" %}
           <span class="status-badge status-analyzing">🔍 Analisando...</span>
+        {% elif job.status == "llm_enrichment" %}
+          <span class="status-badge status-analyzing">🧠 Enriquecendo LLM...</span>
         {% elif job.status == "rendering" %}
           <span class="status-badge status-rendering">🎬 Renderizando...</span>
+        {% elif job.status == "cancel_requested" %}
+          <span class="status-badge status-canceling">⏹️ Cancelando...</span>
+        {% elif job.status == "canceled" %}
+          <span class="status-badge status-failed">⛔ Cancelado</span>
         {% else %}
           <span class="status-badge">{{ job.status }}</span>
         {% endif %}
+        </div>
       </div>
     </div>
 
     {% if job.error_message %}
-    <div class="error-box">
+    <div class="error-box" id="job-error-box">
       ⚠️ <strong>Erro:</strong> {{ job.error_message }}
+    </div>
+    {% endif %}
+
+    {% if queue_waiting %}
+    <div class="snippet" id="job-queue-waiting-box" style="margin-top: 14px; border-left-color: #ffd37b;">
+      <strong>Na fila tecnica:</strong> este job esta saudavel e vai iniciar assim que um slot pesado do pipeline for liberado.
     </div>
     {% endif %}
 
     <div class="meta-grid">
       {% if job.video_path %}
-      <div class="meta-item">
+      <div class="meta-item" id="video-asset-card">
         <strong>🎥 Vídeo original</strong>
-        <a href="{{ build_static_url(job.video_path) }}" target="_blank">Abrir arquivo</a>
+        <a id="video-asset-link" href="{{ build_static_url(job.video_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
 
       {% if job.audio_path %}
-      <div class="meta-item">
+      <div class="meta-item" id="audio-asset-card">
         <strong>🔊 Áudio extraído</strong>
-        <a href="{{ build_static_url(job.audio_path) }}" target="_blank">Abrir arquivo</a>
+        <a id="audio-asset-link" href="{{ build_static_url(job.audio_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
 
       {% if job.transcript_path %}
-      <div class="meta-item">
+      <div class="meta-item" id="transcript-asset-card">
         <strong>📄 Transcrição</strong>
-        <a href="{{ build_static_url(job.transcript_path) }}" target="_blank">Abrir arquivo</a>
+        <a id="transcript-asset-link" href="{{ build_static_url(job.transcript_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
     </div>
@@ -1161,17 +1187,17 @@
   </div>
 
   <div class="overview-grid">
-    <div class="overview-card">
+    <div class="overview-card" id="overview-candidates-card">
       <span>Candidatos</span>
-      <strong>{{ candidates|length }}</strong>
+      <strong id="overview-candidates-count">{{ candidates_total_count }}</strong>
     </div>
-    <div class="overview-card">
+    <div class="overview-card" id="overview-clips-card">
       <span>Clips gerados</span>
-      <strong>{{ clips|length }}</strong>
+      <strong id="overview-clips-count">{{ clips|length }}</strong>
     </div>
-    <div class="overview-card">
+    <div class="overview-card" id="overview-exports-card">
       <span>Pacotes exportados</span>
-      <strong>{{ exports|length }}</strong>
+      <strong id="overview-exports-count">{{ exports|length }}</strong>
     </div>
     <div class="overview-card">
       <span>Preset ativo</span>
@@ -1192,8 +1218,9 @@
   </div>
   {% endif %}
 
-  <div class="card">
+  <div class="card" id="pipeline-card">
     <h2>Pipeline</h2>
+    <div id="pipeline-content">
     {% if steps %}
     <div class="step-list">
       {% for step in steps %}
@@ -1236,6 +1263,29 @@
         </div>
         {% endif %}
 
+        {% if step.status == "running" and (step.progress_message or step.heartbeat_at) %}
+        <div class="snippet" style="margin-top: 10px;">
+          {% if step.progress_percent is not none %}
+          <div class="progress-bar" style="margin: 0 0 10px 0;">
+            <div class="progress-fill" style="width: {{ step.progress_percent }}%;"></div>
+          </div>
+          <strong>Progresso:</strong> {{ step.progress_percent }}%<br>
+          {% endif %}
+          {% if step.progress_message %}
+          <strong>Atividade atual:</strong> {{ step.progress_message }}<br>
+          {% endif %}
+          {% if step.heartbeat_at %}
+          <strong>Ultima atividade:</strong> {{ step.heartbeat_at }}
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if step.status == "running" and step.heartbeat_is_stale %}
+        <div class="error-box">
+          <strong>Possivel travamento:</strong> sem nova atividade ha pelo menos {{ step.heartbeat_age_seconds }}s. Se esse tempo continuar subindo, vale reprocessar a etapa.
+        </div>
+        {% endif %}
+
         {% if step.started_at or step.completed_at or step.duration_label %}
         <div class="step-timeline">
           {% if step.started_at %}
@@ -1275,6 +1325,13 @@
         {% endif %}
 
         <div class="step-actions">
+          {% if step.step_name == "llm_enrichment" and job.transcript_path and step.status in ["running", "failed", "exhausted"] %}
+          <form method="post" action="/jobs/{{ job.id }}/view/analyze-without-llm">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <button type="submit" class="warning-button">Concluir sem LLM</button>
+          </form>
+          {% endif %}
+
           {% if step.can_retry %}
           <form method="post" action="/jobs/{{ job.id }}/view/steps/{{ step.step_name }}/retry">
             <button type="submit">Reprocessar etapa</button>
@@ -1302,6 +1359,7 @@
       Nenhuma etapa registrada ainda.
     </div>
     {% endif %}
+    </div>
   </div>
 
   {% if job.status == "failed" or job.status == "pending" %}
@@ -1325,7 +1383,18 @@
   </div>
   {% endif %}
 
-  {% if job.status == "done" and job.transcript_path %}
+  {% if job.video_path and not job.transcript_path %}
+  <div class="card" id="manual-render-direct-card">
+    <h2>Render manual imediato</h2>
+    <p style="color: #888; font-size: 13px;">Este video ja pode ser cortado manualmente mesmo sem analise concluida. Defina o trecho pelo tempo do video e renderize direto.</p>
+    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Legenda embutida fica disponivel depois que a transcricao existir.</p>
+    <div class="step-actions">
+      <a class="ghost-button" href="#manual-render-card">Abrir render manual</a>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if job.video_path %}
   {% if feedback_profile %}
   <div class="card">
     <h2>Aprendizado</h2>
@@ -1460,15 +1529,35 @@
     <h2>✂️ Render manual</h2>
     <p style="color: #888; font-size: 13px;">Preencha os tempos manualmente ou clique em um dos botões dos candidatos abaixo.</p>
 
+    {% if not job.transcript_path %}
+    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Este corte manual pode sair agora. A legenda embutida sera ignorada ate existir transcricao.</p>
+    {% endif %}
+
     <form method="post" action="/jobs/{{ job.id }}/view/render-manual" class="form-group toolbar">
       <div>
-        <label for="start"><strong>Início (segundos)</strong></label>
-        <input type="number" step="0.1" min="0" name="start" id="start" required>
+        <label for="start"><strong>Início (hh:mm:ss ou segundos)</strong></label>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(68px, 1fr)); gap: 8px;">
+          <input type="number" min="0" step="1" name="start_hours" id="start_hours" placeholder="hh" required>
+          <input type="number" min="0" step="1" name="start_minutes" id="start_minutes" placeholder="mm" required>
+          <input type="number" min="0" step="0.1" name="start_seconds" id="start_seconds" placeholder="ss" required>
+        </div>
+        <input type="hidden" name="start" id="start">
+        {% if auto_refresh_enabled %}
+        <div id="auto-refresh-control" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+          <span id="auto-refresh-indicator" class="badge">Monitoramento automatico ativo</span>
+          <button id="auto-refresh-toggle" type="button" class="ghost-button">Pausar auto-refresh</button>
+        </div>
+        {% endif %}
       </div>
 
       <div>
-        <label for="end"><strong>Fim (segundos)</strong></label>
-        <input type="number" step="0.1" min="0" name="end" id="end" required>
+        <label for="end"><strong>Fim (hh:mm:ss ou segundos)</strong></label>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(68px, 1fr)); gap: 8px;">
+          <input type="number" min="0" step="1" name="end_hours" id="end_hours" placeholder="hh" required>
+          <input type="number" min="0" step="1" name="end_minutes" id="end_minutes" placeholder="mm" required>
+          <input type="number" min="0" step="0.1" name="end_seconds" id="end_seconds" placeholder="ss" required>
+        </div>
+        <input type="hidden" name="end" id="end">
       </div>
 
       <div>
@@ -1490,7 +1579,7 @@
 
       <div style="display: flex; align-items: center; gap: 8px;">
         <input type="checkbox" name="burn_subtitles" value="true" id="manual_subtitles">
-        <label for="manual_subtitles" style="margin: 0;">Legenda embutida</label>
+        <label for="manual_subtitles" style="margin: 0;">Legenda embutida{% if not job.transcript_path %} (indisponivel sem transcricao){% endif %}</label>
       </div>
 
       <div>
@@ -1530,7 +1619,11 @@
 
   <div class="card">
     <h2>Candidatos</h2>
-    {% if candidates_missing %}
+    {% if candidates_missing and job.status in ["analyzing", "llm_enrichment"] %}
+    <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: #17304a; border: 1px solid #2c5372; color: #d8ecff;">
+      A analise incremental ainda está processando os primeiros blocos da transcricao. Os candidatos aparecem aqui assim que cada chunk termina.
+    </div>
+    {% elif candidates_missing %}
     <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: #2b2412; border: 1px solid #5c4a1e; color: #f6dea0;">
       Este video ainda nao tem candidatos persistidos para este modo. Use a acao de analisar para gerar os cortes sem travar a pagina.
     </div>
@@ -1865,6 +1958,199 @@
   {% endif %}
 
   <script>
+    const jobMonitorEndpoint = "/jobs/{{ job.id }}/monitor";
+    const jobAutoRefreshEnabled = {{ "true" if auto_refresh_enabled else "false" }};
+    const jobAutoRefreshIntervalMs = {{ auto_refresh_interval_ms }};
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function renderJobStatusBadge(status) {
+      const normalized = String(status || "").trim();
+      if (normalized === "done") return '<span class="status-badge status-done">Concluido</span>';
+      if (normalized === "failed") return '<span class="status-badge status-failed">Erro</span>';
+      if (normalized === "pending") return '<span class="status-badge status-pending">Na fila</span>';
+      if (normalized === "downloading") return '<span class="status-badge status-downloading">Baixando...</span>';
+      if (normalized === "extracting_audio") return '<span class="status-badge status-extracting_audio">Extraindo audio...</span>';
+      if (normalized === "transcribing") return '<span class="status-badge status-transcribing">Transcrevendo...</span>';
+      if (normalized === "analyzing") return '<span class="status-badge status-analyzing">Analisando...</span>';
+      if (normalized === "llm_enrichment") return '<span class="status-badge status-analyzing">Enriquecendo LLM...</span>';
+      if (normalized === "rendering") return '<span class="status-badge status-rendering">Renderizando...</span>';
+      if (normalized === "cancel_requested") return '<span class="status-badge status-canceling">Cancelando...</span>';
+      if (normalized === "canceled") return '<span class="status-badge status-failed">Cancelado</span>';
+      return `<span class="status-badge">${escapeHtml(normalized)}</span>`;
+    }
+
+    function renderStepActions(step) {
+      const actions = [];
+      if (step.status === "running") {
+        actions.push(`
+          <form method="post" action="/jobs/{{ job.id }}/view/cancel">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="render_preset" value="{{ render_preset }}">
+            <button type="submit" class="danger-button">Cancelar processamento</button>
+          </form>
+        `);
+      }
+      if (step.step_name === "llm_enrichment" && step.status && ["running", "failed", "exhausted"].includes(step.status)) {
+        actions.push(`
+          <form method="post" action="/jobs/{{ job.id }}/view/analyze-without-llm">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <button type="submit" class="warning-button">Concluir sem LLM</button>
+          </form>
+        `);
+      }
+      if (step.can_retry) {
+        actions.push(`
+          <form method="post" action="/jobs/{{ job.id }}/view/steps/${escapeHtml(step.step_name)}/retry">
+            <button type="submit">Reprocessar etapa</button>
+          </form>
+        `);
+      }
+      if (step.can_force_retry) {
+        actions.push(`
+          <form method="post" action="/jobs/{{ job.id }}/view/steps/${escapeHtml(step.step_name)}/retry">
+            <input type="hidden" name="force" value="true">
+            <button type="submit">Forcar retry</button>
+          </form>
+        `);
+      }
+      if (step.can_reset) {
+        actions.push(`
+          <form method="post" action="/jobs/{{ job.id }}/view/steps/${escapeHtml(step.step_name)}/reset">
+            <button type="submit">Resetar etapa</button>
+          </form>
+        `);
+      }
+      return actions.length ? `<div class="step-actions">${actions.join("")}</div>` : "";
+    }
+
+    function renderStepItem(step) {
+      const summaryItems = (step.summary_items || [])
+        .map((item) => `<span class="badge">${escapeHtml(item)}</span>`)
+        .join("");
+      const detailItems = (step.detail_items || [])
+        .map((item) => `<p style="margin: 6px 0 0 0;"><strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.value)}</p>`)
+        .join("");
+      const timelineItems = [
+        step.started_at ? `<div class="meta-item"><strong>Inicio</strong><span>${escapeHtml(step.started_at)}</span></div>` : "",
+        step.completed_at ? `<div class="meta-item"><strong>Fim</strong><span>${escapeHtml(step.completed_at)}</span></div>` : "",
+        step.duration_label ? `<div class="meta-item"><strong>Duracao</strong><span>${escapeHtml(step.duration_label)}</span></div>` : "",
+      ].join("");
+
+      return `
+        <div class="step-item">
+          <div class="step-header">
+            <div>
+              <div class="step-name">${escapeHtml(step.step_name)}</div>
+              <div class="step-meta">${escapeHtml(step.status_label)} | tentativas ${escapeHtml(step.attempts)}/${escapeHtml(step.max_attempts)}</div>
+            </div>
+            <div><span class="status-badge ${step.status === "completed" ? "status-done" : step.status === "running" ? "status-analyzing" : step.status === "failed" || step.status === "exhausted" ? "status-failed" : "status-pending"}">${escapeHtml(step.status_label)}</span></div>
+          </div>
+          ${step.error_message ? `<div class="error-box"><strong>Erro:</strong> ${escapeHtml(step.error_message)}</div>` : ""}
+          ${summaryItems ? `<div class="step-summary">${summaryItems}</div>` : ""}
+          ${step.status === "running" && (step.progress_message || step.heartbeat_at) ? `<div class="snippet" style="margin-top: 10px;">${step.progress_percent !== null && step.progress_percent !== undefined ? `<div class="progress-bar" style="margin: 0 0 10px 0;"><div class="progress-fill" style="width: ${escapeHtml(step.progress_percent)}%;"></div></div><strong>Progresso:</strong> ${escapeHtml(step.progress_percent)}%<br>` : ""}${step.progress_message ? `<strong>Atividade atual:</strong> ${escapeHtml(step.progress_message)}<br>` : ""}${step.heartbeat_at ? `<strong>Ultima atividade:</strong> ${escapeHtml(step.heartbeat_at)}` : ""}</div>` : ""}
+          ${step.status === "running" && step.heartbeat_is_stale ? `<div class="error-box"><strong>Possivel travamento:</strong> sem nova atividade ha pelo menos ${escapeHtml(step.heartbeat_age_seconds)}s.</div>` : ""}
+          ${timelineItems ? `<div class="step-timeline">${timelineItems}</div>` : ""}
+          ${detailItems ? `<div class="step-details"><strong>Contexto da etapa:</strong>${detailItems}</div>` : ""}
+          ${renderStepActions(step)}
+        </div>
+      `;
+    }
+
+    function setOverviewCount(elementId, value) {
+      const element = document.getElementById(elementId);
+      if (!element) return;
+      element.textContent = Number.isFinite(Number(value)) ? String(value) : "0";
+    }
+
+    function syncAssetCard(cardId, linkId, url) {
+      const card = document.getElementById(cardId);
+      const link = document.getElementById(linkId);
+      if (!card || !link) return;
+
+      if (url) {
+        link.href = url;
+        card.style.display = "";
+        return;
+      }
+
+      card.style.display = "none";
+      link.removeAttribute("href");
+    }
+
+    function syncOriginalVideoPreview(url) {
+      const card = document.getElementById("original-video-card");
+      const player = document.getElementById("original-video-player");
+      if (!card || !player) return;
+
+      const source = player.querySelector("source");
+      if (!source) return;
+
+      if (!url) {
+        card.style.display = "none";
+        source.removeAttribute("src");
+        player.load();
+        return;
+      }
+
+      if (source.getAttribute("src") !== url) {
+        source.setAttribute("src", url);
+        player.load();
+      }
+      card.style.display = "";
+    }
+
+    async function refreshJobMonitorPartial() {
+      const response = await fetch(jobMonitorEndpoint, { headers: { Accept: "application/json" } });
+      if (!response.ok) return;
+      const payload = await response.json();
+
+      const statusBadge = document.getElementById("job-status-badge");
+      if (statusBadge) {
+        statusBadge.innerHTML = renderJobStatusBadge(payload.status);
+      }
+
+      const existingErrorBox = document.getElementById("job-error-box");
+      if (payload.error_message) {
+        if (existingErrorBox) {
+          existingErrorBox.innerHTML = `⚠️ <strong>Erro:</strong> ${escapeHtml(payload.error_message)}`;
+        }
+      } else if (existingErrorBox) {
+        existingErrorBox.remove();
+      }
+
+      const pipelineContent = document.getElementById("pipeline-content");
+      if (pipelineContent) {
+        const steps = payload.steps || [];
+        pipelineContent.innerHTML = steps.length
+          ? `<div class="step-list">${steps.map(renderStepItem).join("")}</div>`
+          : '<div class="empty-state">Nenhuma etapa registrada ainda.</div>';
+      }
+
+      const overview = payload.overview || {};
+      const previousCandidatesCount = Number(document.getElementById("overview-candidates-count")?.textContent || 0);
+      setOverviewCount("overview-candidates-count", overview.candidates_count);
+      setOverviewCount("overview-clips-count", overview.clips_count);
+      setOverviewCount("overview-exports-count", overview.exports_count);
+
+      if (Number(overview.candidates_count || 0) !== previousCandidatesCount) {
+        window.location.reload();
+        return;
+      }
+
+      syncAssetCard("video-asset-card", "video-asset-link", payload.video_url);
+      syncAssetCard("audio-asset-card", "audio-asset-link", payload.audio_url);
+      syncAssetCard("transcript-asset-card", "transcript-asset-link", payload.transcript_url);
+      syncOriginalVideoPreview(payload.video_url);
+    }
+
     function dismissFlashBanner() {
       const banner = document.getElementById("flash-banner");
       if (!banner) return;
@@ -1880,25 +2166,161 @@
       }
     });
 
+    window.addEventListener("DOMContentLoaded", () => {
+      const manualForm = document.querySelector('#manual-render-card form');
+      const manualFields = [
+        "start_hours",
+        "start_minutes",
+        "start_seconds",
+        "end_hours",
+        "end_minutes",
+        "end_seconds",
+      ];
+
+      for (const fieldId of manualFields) {
+        const field = document.getElementById(fieldId);
+        if (!field) continue;
+        field.addEventListener("input", syncManualHiddenInputs);
+      }
+
+      syncManualHiddenInputs();
+
+      if (manualForm) {
+        manualForm.addEventListener("submit", syncManualHiddenInputs);
+      }
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      if (!jobAutoRefreshEnabled) return;
+
+      const storageKey = `job-auto-refresh-paused:${window.location.pathname}`;
+      const indicator = document.getElementById("auto-refresh-indicator");
+      const toggleButton = document.getElementById("auto-refresh-toggle");
+      const guardedFormSelectors = [
+        "#manual-render-card form",
+        ".notes-form",
+        "#bulk-candidate-form",
+      ];
+
+      let isSubmitting = false;
+      let isPaused = window.localStorage.getItem(storageKey) === "true";
+
+      function updateAutoRefreshUi() {
+        if (!indicator || !toggleButton) return;
+        indicator.textContent = isPaused
+          ? "Monitoramento automatico pausado"
+          : "Monitoramento automatico ativo";
+        toggleButton.textContent = isPaused
+          ? "Retomar auto-refresh"
+          : "Pausar auto-refresh";
+      }
+
+      if (toggleButton) {
+        toggleButton.addEventListener("click", () => {
+          isPaused = !isPaused;
+          window.localStorage.setItem(storageKey, isPaused ? "true" : "false");
+          updateAutoRefreshUi();
+        });
+      }
+
+      updateAutoRefreshUi();
+
+      for (const selector of guardedFormSelectors) {
+        for (const form of document.querySelectorAll(selector)) {
+          form.addEventListener("submit", () => {
+            isSubmitting = true;
+          });
+        }
+      }
+
+      window.setInterval(() => {
+        if (isPaused) return;
+        if (isSubmitting) return;
+
+        const activeElement = document.activeElement;
+        const isEditing =
+          activeElement &&
+          ["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName);
+
+        if (isEditing) return;
+        refreshJobMonitorPartial().catch(() => {});
+      }, jobAutoRefreshIntervalMs);
+    });
+
+    function formatSecondsAsTimecode(totalSeconds) {
+      const safeSeconds = Math.max(0, Number(totalSeconds || 0));
+      const hours = Math.floor(safeSeconds / 3600);
+      const minutes = Math.floor((safeSeconds % 3600) / 60);
+      const seconds = safeSeconds % 60;
+      const wholeSeconds = Math.floor(seconds);
+      const decimal = Number((seconds - wholeSeconds).toFixed(1));
+      const secondsLabel = decimal > 0
+        ? String((wholeSeconds + decimal).toFixed(1)).padStart(4, "0")
+        : String(wholeSeconds).padStart(2, "0");
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${secondsLabel}`;
+    }
+
+    function parseTimecodeInput(value) {
+      const raw = String(value || "").trim().replace(",", ".");
+      if (!raw) return 0;
+      if (!raw.includes(":")) {
+        return Number(raw) || 0;
+      }
+
+      const parts = raw.split(":").map((part) => Number(part));
+      if (parts.some((part) => Number.isNaN(part))) {
+        return 0;
+      }
+      if (parts.length === 2) {
+        return (parts[0] * 60) + parts[1];
+      }
+      if (parts.length === 3) {
+        return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+      }
+      return 0;
+    }
+
     function fillManualForm(start, end, mode) {
-      const startInput = document.getElementById("start");
-      const endInput = document.getElementById("end");
       const modeSelect = document.getElementById("manual_mode");
       const card = document.getElementById("manual-render-card");
 
-      startInput.value = Number(start).toFixed(1);
-      endInput.value = Number(end).toFixed(1);
+      setManualTimeFields("start", start);
+      setManualTimeFields("end", end);
       modeSelect.value = mode;
 
       card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    function adjustStart(delta) {
-      const startInput = document.getElementById("start");
-      const endInput = document.getElementById("end");
+    function setManualTimeFields(prefix, totalSeconds) {
+      const safeSeconds = Math.max(0, Number(totalSeconds || 0));
+      const hours = Math.floor(safeSeconds / 3600);
+      const minutes = Math.floor((safeSeconds % 3600) / 60);
+      const seconds = Number((safeSeconds % 60).toFixed(1));
+      const hiddenInput = document.getElementById(prefix);
 
-      let start = parseFloat(startInput.value || "0");
-      let end = parseFloat(endInput.value || "0");
+      document.getElementById(`${prefix}_hours`).value = hours;
+      document.getElementById(`${prefix}_minutes`).value = minutes;
+      document.getElementById(`${prefix}_seconds`).value = seconds;
+      if (hiddenInput) {
+        hiddenInput.value = formatSecondsAsTimecode(safeSeconds);
+      }
+    }
+
+    function getManualTimeValue(prefix) {
+      const hours = Number(document.getElementById(`${prefix}_hours`).value || 0);
+      const minutes = Number(document.getElementById(`${prefix}_minutes`).value || 0);
+      const seconds = Number(document.getElementById(`${prefix}_seconds`).value || 0);
+      return (hours * 3600) + (minutes * 60) + seconds;
+    }
+
+    function syncManualHiddenInputs() {
+      setManualTimeFields("start", getManualTimeValue("start"));
+      setManualTimeFields("end", getManualTimeValue("end"));
+    }
+
+    function adjustStart(delta) {
+      let start = getManualTimeValue("start");
+      let end = getManualTimeValue("end");
 
       start = Math.max(0, start + delta);
 
@@ -1906,15 +2328,12 @@
         start = Math.max(0, end - 0.1);
       }
 
-      startInput.value = start.toFixed(1);
+      setManualTimeFields("start", start);
     }
 
     function adjustEnd(delta) {
-      const startInput = document.getElementById("start");
-      const endInput = document.getElementById("end");
-
-      let start = parseFloat(startInput.value || "0");
-      let end = parseFloat(endInput.value || "0");
+      let start = getManualTimeValue("start");
+      let end = getManualTimeValue("end");
 
       end = Math.max(0, end + delta);
 
@@ -1922,7 +2341,7 @@
         end = start + 0.1;
       }
 
-      endInput.value = end.toFixed(1);
+      setManualTimeFields("end", end);
     }
 
     function previewCandidateInOriginal(start, end) {

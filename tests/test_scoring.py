@@ -371,6 +371,55 @@ class ScoringTestCase(unittest.TestCase):
         redundant = next(item for item in ranked if item["start"] == 10.0)
         self.assertGreater(redundant["diversity_penalty"], 4.0)
 
+    def test_score_candidates_uses_calibration_profile_from_real_history(self):
+        candidates = [
+            {
+                "start": 0.0,
+                "end": 118.0,
+                "duration": 118.0,
+                "text": "Por que esse erro mata a retenção e como corrigir com clareza até o final do trecho.",
+                "opening_text": "Por que esse erro mata a retenção",
+                "middle_text": "e como corrigir com clareza",
+                "closing_text": "até o final do trecho.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+            {
+                "start": 130.0,
+                "end": 214.0,
+                "duration": 84.0,
+                "text": "Por que esse erro mata a retenção? Três sinais mostram a correção prática e o terceiro quase sempre passa despercebido.",
+                "opening_text": "Por que esse erro mata a retenção?",
+                "middle_text": "Três sinais mostram a correção prática",
+                "closing_text": "e o terceiro quase sempre passa despercebido.",
+                "segments_count": 3,
+                "pause_before": 0.5,
+                "pause_after": 0.5,
+                "starts_clean": True,
+                "ends_clean": True,
+            },
+        ]
+
+        ranked = score_candidates(
+            candidates,
+            mode="short",
+            niche="geral",
+            calibration_profile={
+                "preferred_short_max_seconds": 95.0,
+                "diversity_penalty_multiplier": 1.0,
+                "informative_opening_multiplier": 1.0,
+                "context_penalty_multiplier": 1.0,
+            },
+        )
+
+        self.assertEqual(ranked[0]["start"], 130.0)
+        long_short = next(item for item in ranked if item["start"] == 0.0)
+        self.assertEqual(long_short["duration_fit_score"], 0.5)
+        self.assertIn("short competitivo", long_short["reason"])
+
     def test_rerank_candidates_if_enabled_uses_llm_without_breaking_fallback(self):
         candidates = [
             {"start": 0.0, "score": 8.0, "base_score": 8.0, "reason": "base", "text": "a", "opening_text": "a", "closing_text": "a", "duration": 60.0},

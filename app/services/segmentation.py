@@ -78,6 +78,45 @@ def build_candidate_windows(
     return deduplicate_candidates(candidates)
 
 
+def split_segments_into_time_chunks(
+    segments: list[dict[str, Any]],
+    *,
+    chunk_duration_seconds: float = 900.0,
+    overlap_seconds: float = 45.0,
+) -> list[list[dict[str, Any]]]:
+    if not segments:
+        return []
+
+    chunks: list[list[dict[str, Any]]] = []
+    current_chunk: list[dict[str, Any]] = []
+    chunk_start = float(segments[0].get("start", 0.0) or 0.0)
+
+    for segment in segments:
+        segment_start = float(segment.get("start", 0.0) or 0.0)
+        segment_end = float(segment.get("end", segment_start) or segment_start)
+        if current_chunk and (segment_end - chunk_start) > chunk_duration_seconds:
+            chunks.append(current_chunk)
+            overlap_start = max(chunk_start, segment_start - overlap_seconds)
+            current_chunk = [
+                existing_segment
+                for existing_segment in current_chunk
+                if float(existing_segment.get("end", existing_segment.get("start", 0.0)) or 0.0) >= overlap_start
+            ]
+            if not current_chunk:
+                current_chunk = [segment]
+            elif current_chunk[-1] is not segment:
+                current_chunk.append(segment)
+            chunk_start = float(current_chunk[0].get("start", segment_start) or segment_start)
+            continue
+
+        current_chunk.append(segment)
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+
+
 def _build_candidate(
     group: list[dict[str, Any]],
     mode: str,

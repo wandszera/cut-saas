@@ -18,6 +18,7 @@ from app.models.job_step import JobStep
 from app.services.llm_provider import LLMRateLimitError
 from app.services.niche_registry import create_pending_niche
 from app.services.pipeline import MAX_STEP_ATTEMPTS, process_job_pipeline
+from app.services.segmentation import split_segments_into_time_chunks
 
 
 class RoutesTestCase(unittest.TestCase):
@@ -183,6 +184,52 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"message": "ok"})
+
+    def test_analysis_calibration_endpoint_summarizes_real_editorial_history(self):
+        job_a = self._create_job(detected_niche="podcast")
+        job_b = self._create_job(detected_niche="podcast")
+        self._create_candidate(
+            job_a.id,
+            mode="short",
+            duration=82.0,
+            opening_text="Por que esse erro derruba sua retenção?",
+            status="approved",
+            is_favorite=True,
+        )
+        self._create_candidate(
+            job_a.id,
+            mode="short",
+            duration=86.0,
+            opening_text="Por que esse erro derruba sua retenção?",
+            status="rendered",
+        )
+        self._create_candidate(
+            job_b.id,
+            mode="short",
+            duration=124.0,
+            opening_text="Hoje eu vou falar sobre retenção",
+            status="rejected",
+        )
+        self._create_candidate(
+            job_b.id,
+            mode="short",
+            duration=128.0,
+            opening_text="Esse ponto aqui mostra tudo",
+            status="rejected",
+        )
+
+        response = self.client.get("/jobs/analysis-calibration", params={"mode": "short", "niche": "podcast"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["calibration_active"])
+        self.assertEqual(data["mode"], "short")
+        self.assertEqual(data["niche"], "podcast")
+        self.assertEqual(data["reviewed_count"], 4)
+        self.assertLess(data["preferred_short_max_seconds"], 120.0)
+        self.assertGreaterEqual(data["informative_opening_multiplier"], 1.2)
+        self.assertGreaterEqual(data["context_penalty_multiplier"], 1.2)
+        self.assertTrue(data["recommendations"])
 
     def test_create_youtube_job_success(self):
         with (
@@ -371,6 +418,102 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("audio path:", response.text.lower())
         self.assertIn("C:/tmp/audio.mp3", response.text)
 
+    def test_job_detail_page_renders_running_step_heartbeat_metadata(self):
+        job = self._create_job(status="analyzing")
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="analyzing",
+                    status="running",
+                    attempts=1,
+                    details=(
+                        '{"attempt": 1, "progress_message": "Gerando insights da transcricao", '
+                        '"progress_percent": 64, '
+                        '"heartbeat_at": "2026-04-18T19:45:00+00:00"}'
+                    ),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Progresso:", response.text)
+        self.assertIn("64%", response.text)
+        self.assertIn("Atividade atual:", response.text)
+        self.assertIn("Gerando insights da transcricao", response.text)
+        self.assertIn("Ultima atividade:", response.text)
+        self.assertIn("2026-04-18T19:45:00+00:00", response.text)
+
+    def test_job_detail_page_renders_partial_candidates_during_analyzing(self):
+        job = self._create_job(status="analyzing")
+        self._create_candidate(job.id, status="pending", score=9.4, opening_text="gancho parcial")
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Candidatos", response.text)
+        self.assertIn("gancho parcial", response.text)
+
+    def test_job_detail_page_flags_stale_running_step(self):
+        job = self._create_job(status="analyzing")
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="analyzing",
+                    status="running",
+                    attempts=1,
+                    details=(
+                        '{"attempt": 1, "progress_message": "Gerando insights da transcricao", '
+                        '"heartbeat_at": "2026-04-18T18:00:00+00:00"}'
+                    ),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        with patch("app.web.routes_pages.datetime") as mocked_datetime:
+            mocked_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            mocked_datetime.now.return_value = datetime.fromisoformat("2026-04-18T19:00:01+00:00")
+            mocked_datetime.utcnow.return_value = datetime(2026, 4, 18, 19, 0, 1)
+            response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Possivel travamento:", response.text)
+        self.assertIn("sem nova atividade ha pelo menos 3601s", response.text)
+
+    def test_job_detail_page_renders_conclude_without_llm_action_for_llm_step(self):
+        job = self._create_job(status="analyzing")
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="llm_enrichment",
+                    status="running",
+                    attempts=1,
+                    details='{"attempt": 1, "progress_message": "Gerando insights da transcricao"}',
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Concluir sem LLM", response.text)
+
     def test_niche_admin_page_renders_builtin_niches(self):
         response = self.client.get("/nichos")
 
@@ -427,6 +570,87 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["niche"]["slug"], "empreendedorismo-local")
         self.assertEqual(data["niche"]["status"], "pending")
         mocked_create.assert_called_once()
+
+    def test_get_pipeline_health_returns_queue_and_duration_metrics(self):
+        queued_job = self._create_job(status="pending", error_message="Aguardando vaga na fila de processamento.")
+        self._create_job(status="transcribing", title="Ativo")
+        self._create_job(status="failed", title="Falhou")
+        self._create_job(status="canceled", title="Cancelado")
+
+        db = self._session()
+        try:
+            db.add_all(
+                [
+                    JobStep(
+                        job_id=queued_job.id,
+                        step_name="transcribing",
+                        status="completed",
+                        attempts=1,
+                        details='{"duration_seconds": 12.5}',
+                    ),
+                    JobStep(
+                        job_id=queued_job.id,
+                        step_name="analyzing",
+                        status="completed",
+                        attempts=1,
+                        details='{"duration_seconds": 30.0}',
+                    ),
+                    JobStep(
+                        job_id=queued_job.id,
+                        step_name="llm_enrichment",
+                        status="running",
+                        attempts=1,
+                        details='{"heartbeat_at": "2026-04-18T18:00:00+00:00"}',
+                    ),
+                    JobStep(
+                        job_id=queued_job.id,
+                        step_name="transcribing",
+                        status="completed",
+                        attempts=1,
+                        details='{"duration_seconds": 7.5}',
+                    ),
+                ]
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        with patch("app.api.routes_jobs.datetime") as mocked_datetime:
+            mocked_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            mocked_datetime.now.return_value = datetime.fromisoformat("2026-04-18T19:00:01+00:00")
+            mocked_datetime.utcnow.return_value = datetime(2026, 4, 18, 19, 0, 1)
+            response = self.client.get("/jobs/health/pipeline")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["jobs"]["queued"], 1)
+        self.assertEqual(data["jobs"]["active"], 1)
+        self.assertEqual(data["jobs"]["failed"], 1)
+        self.assertEqual(data["jobs"]["canceled"], 1)
+        self.assertEqual(data["steps"]["completed"], 3)
+        self.assertEqual(data["steps"]["stale_running"], 1)
+        self.assertEqual(data["steps"]["average_duration_seconds"]["transcribing"], 10.0)
+        self.assertEqual(data["steps"]["average_duration_seconds"]["analyzing"], 30.0)
+
+    def test_get_dashboard_monitor_returns_compact_dashboard_payload(self):
+        queued_job = self._create_job(status="pending", error_message="Aguardando vaga na fila de processamento.")
+        active_job = self._create_job(status="transcribing", title="Ativo")
+        done_job = self._create_job(status="done", title="Finalizado")
+        self._create_clip(done_job.id)
+
+        response = self.client.get("/jobs/dashboard/monitor")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["summary"]["queued_jobs"], 1)
+        self.assertEqual(data["summary"]["active_jobs"], 1)
+        self.assertEqual(data["summary"]["jobs_with_clips"], 1)
+        self.assertIn("pipeline_health", data)
+        queued_payload = next(job for job in data["jobs"] if job["id"] == queued_job.id)
+        active_payload = next(job for job in data["jobs"] if job["id"] == active_job.id)
+        self.assertEqual(queued_payload["status"], "pending")
+        self.assertEqual(active_payload["status"], "transcribing")
+        self.assertIn("progress", active_payload)
 
     def test_api_approve_reject_and_archive_niche_endpoints(self):
         niche = self._create_niche_definition(name="Financas Creator", slug="financas-creator", status="pending")
@@ -827,6 +1051,7 @@ class RoutesTestCase(unittest.TestCase):
     def test_home_renders_dashboard_summary_cards(self):
         job_done = self._create_job(status="done", title="Com clip")
         job_active = self._create_job(status="transcribing", title="Ativo")
+        self._create_job(status="pending", title="Na fila", error_message="Aguardando vaga na fila de processamento.")
         self._create_candidate(job_done.id, status="approved")
         self._create_clip(job_done.id)
 
@@ -842,6 +1067,67 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("Com clips gerados", response.text)
         self.assertIn("Com export pronto", response.text)
         self.assertIn("Ativo", response.text)
+        self.assertIn("aguardando vaga", response.text)
+        self.assertIn("Fila tecnica", response.text)
+        self.assertIn("Heartbeat envelhecido", response.text)
+        self.assertIn("Falhas e cancelamentos", response.text)
+
+    def test_home_renders_queue_waiting_label_for_pending_slot_job(self):
+        self._create_job(status="pending", title="Esperando slot", error_message="Aguardando vaga na fila de processamento.")
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Aguardando slot livre", response.text)
+        self.assertIn('const dashboardMonitorEndpoint = "/jobs/dashboard/monitor";', response.text)
+        self.assertIn("refreshDashboardMonitor()", response.text)
+        self.assertIn('data-job-status-badge="', response.text)
+
+    def test_home_prioritizes_stale_queue_and_canceled_groups(self):
+        stale_job = self._create_job(status="analyzing", title="Travado")
+        self._create_job(status="pending", title="Na fila", error_message="Aguardando vaga na fila de processamento.")
+        self._create_job(status="canceled", title="Cancelado manualmente")
+        self._create_job(status="llm_enrichment", title="LLM rodando")
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=stale_job.id,
+                    step_name="analyzing",
+                    status="running",
+                    attempts=1,
+                    details='{"heartbeat_at": "2026-04-18T18:00:00+00:00"}',
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        with patch("app.web.routes_pages._heartbeat_age_seconds", return_value=3601):
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Possivel travamento", response.text)
+        self.assertIn("Na fila tecnica", response.text)
+        self.assertIn("Cancelados", response.text)
+        self.assertIn("Verificar heartbeat", response.text)
+        self.assertIn("Reprocessar job", response.text)
+        self.assertIn("Cancelar processamento", response.text)
+        self.assertIn("Concluir sem LLM", response.text)
+
+    def test_job_detail_renders_queue_waiting_hint(self):
+        job = self._create_job(
+            status="pending",
+            title="Esperando slot",
+            error_message="Aguardando vaga na fila de processamento.",
+        )
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Na fila tecnica:", response.text)
+        self.assertIn("slot pesado do pipeline", response.text)
 
     def test_home_renders_publication_board_sections(self):
         ready_job = self._create_job(status="done", title="Pronto")
@@ -902,6 +1188,70 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Sucesso", response.text)
         self.assertIn("Atualizacao salva.", response.text)
+
+    def test_job_detail_renders_manual_direct_card_without_transcript(self):
+        job = self._create_job(status="extracting_audio", transcript_path=None, detected_niche=None)
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Render manual imediato", response.text)
+        self.assertIn("Abrir render manual", response.text)
+        self.assertIn('id="manual-render-card"', response.text)
+        self.assertIn("Este corte manual pode sair agora.", response.text)
+
+    def test_job_detail_enables_auto_refresh_for_active_job(self):
+        job = self._create_job(status="llm_enrichment")
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'const jobMonitorEndpoint = "/jobs/{job.id}/monitor";', response.text)
+        self.assertIn("const jobAutoRefreshEnabled = true;", response.text)
+        self.assertIn("const jobAutoRefreshIntervalMs = 15000;", response.text)
+        self.assertIn("Monitoramento automatico ativo", response.text)
+        self.assertIn("Pausar auto-refresh", response.text)
+        self.assertIn("refreshJobMonitorPartial()", response.text)
+        self.assertIn('id="overview-candidates-count"', response.text)
+        self.assertIn('id="overview-clips-count"', response.text)
+        self.assertIn('id="overview-exports-count"', response.text)
+        self.assertIn('id="video-asset-card"', response.text)
+        self.assertIn("syncAssetCard(", response.text)
+        self.assertIn("syncOriginalVideoPreview(", response.text)
+
+    def test_job_detail_renders_cancel_action_for_running_step(self):
+        job = self._create_job(status="transcribing")
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="transcribing",
+                    status="running",
+                    attempts=1,
+                    details='{"progress_message": "Executando transcricao do audio"}',
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Cancelar processamento", response.text)
+        self.assertIn(f'/jobs/{job.id}/view/cancel', response.text)
+
+    def test_job_detail_disables_auto_refresh_for_done_job(self):
+        job = self._create_job(status="done")
+
+        with patch("app.web.routes_pages._ensure_page_candidates", return_value=[]):
+            response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("const jobAutoRefreshEnabled = false;", response.text)
+        self.assertNotIn('id="auto-refresh-toggle"', response.text)
 
     def test_job_detail_backfills_candidates_when_done_job_has_none(self):
         job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
@@ -1099,6 +1449,59 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
+    def test_analyze_without_llm_from_page_completes_analysis_and_redirects(self):
+        job = self._create_job(
+            status="analyzing",
+            transcript_path="C:/tmp/transcript.json",
+            detected_niche=None,
+            niche_confidence=None,
+        )
+
+        with patch("app.web.routes_pages.complete_analysis_without_llm") as mocked_complete:
+            response = self.client.post(
+                f"/jobs/{job.id}/view/analyze-without-llm",
+                data={"mode": "short"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(f"/jobs/{job.id}/view", response.headers["location"])
+        self.assertIn("Analise+concluida+sem+LLM.", response.headers["location"])
+        mocked_complete.assert_called_once()
+
+    def test_cancel_job_from_page_requests_cancellation_and_redirects(self):
+        job = self._create_job(status="transcribing")
+
+        db = self._session()
+        try:
+            db.add(JobStep(job_id=job.id, step_name="transcribing", status="running", attempts=1))
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.post(
+            f"/jobs/{job.id}/view/cancel",
+            data={"mode": "short"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("Cancelamento+solicitado", response.headers["location"])
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "transcribing")
+                .one()
+            )
+            self.assertEqual(refreshed_job.status, "cancel_requested")
+            self.assertEqual(refreshed_job.error_message, "Cancelamento solicitado pelo usuario.")
+            self.assertIn('"cancel_requested": true', step.details.lower())
+        finally:
+            db.close()
+
     def test_reset_job_step_from_page_redirects_and_zeros_attempts(self):
         job = self._create_job(
             status="failed",
@@ -1229,6 +1632,56 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["max_step_attempts"], MAX_STEP_ATTEMPTS)
         self.assertEqual(data["steps"], [])
 
+    def test_get_job_monitor_returns_compact_monitor_payload(self):
+        job = self._create_job(
+            status="llm_enrichment",
+            title="Monitor job",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path="C:/tmp/transcript.json",
+        )
+        self._create_candidate(job.id, mode="short", score=9.2)
+        self._create_clip(job.id, output_path="C:/tmp/clip.mp4", score=8.8)
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="llm_enrichment",
+                    status="running",
+                    attempts=1,
+                    details='{"progress_message": "Gerando insights da transcricao", "heartbeat_at": "2026-04-19T10:00:00+00:00"}',
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        with patch("app.api.routes_jobs.list_job_export_bundles", return_value=[{"name": "job_export.zip"}]), patch(
+            "app.api.routes_jobs.build_static_url",
+            side_effect=lambda path: f"/static/{Path(path).name}" if path else None,
+        ):
+            response = self.client.get(f"/jobs/{job.id}/monitor")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["id"], job.id)
+        self.assertEqual(data["status"], "llm_enrichment")
+        self.assertEqual(data["video_path"], "C:/tmp/video.mp4")
+        self.assertEqual(data["audio_path"], "C:/tmp/audio.mp3")
+        self.assertEqual(data["transcript_path"], "C:/tmp/transcript.json")
+        self.assertTrue(data["video_url"])
+        self.assertTrue(data["audio_url"])
+        self.assertTrue(data["transcript_url"])
+        self.assertEqual(data["overview"]["candidates_count"], 1)
+        self.assertEqual(data["overview"]["clips_count"], 1)
+        self.assertEqual(data["overview"]["exports_count"], 1)
+        self.assertIn("steps", data)
+        self.assertEqual(len(data["steps"]), 1)
+        self.assertEqual(data["steps"][0]["step_name"], "llm_enrichment")
+        self.assertEqual(data["steps"][0]["progress_message"], "Gerando insights da transcricao")
+
     def test_get_job_returns_404_for_missing_job(self):
         response = self.client.get("/jobs/9999")
 
@@ -1350,6 +1803,40 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("Duração: 1.234s", step["summary_items"])
         self.assertIn("Execução forçada", step["summary_items"])
 
+    def test_get_job_returns_running_step_progress_fields(self):
+        job = self._create_job(status="analyzing")
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="analyzing",
+                    status="running",
+                    attempts=1,
+                    details=(
+                        '{"attempt": 1, "progress_message": "Gerando candidatos iniciais", '
+                        '"progress_percent": 52, '
+                        '"heartbeat_at": "2026-04-18T19:50:00+00:00"}'
+                    ),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(f"/jobs/{job.id}")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["steps"]), 1)
+        step = data["steps"][0]
+        self.assertEqual(step["progress_message"], "Gerando candidatos iniciais")
+        self.assertEqual(step["progress_percent"], 52)
+        self.assertEqual(step["heartbeat_at"], "2026-04-18T19:50:00+00:00")
+        self.assertIn("Atividade: Gerando candidatos iniciais", step["summary_items"])
+        self.assertIn("Ultima atividade: 2026-04-18T19:50:00+00:00", step["summary_items"])
+
     def test_get_job_feedback_profile_returns_learning_summary(self):
         target_job = self._create_job(status="done", detected_niche="podcast")
         reference_job = self._create_job(status="done", detected_niche="podcast")
@@ -1455,6 +1942,8 @@ class RoutesTestCase(unittest.TestCase):
         with (
             patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
             patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto existente"}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
         ):
             process_job_pipeline(job.id)
 
@@ -1464,8 +1953,503 @@ class RoutesTestCase(unittest.TestCase):
             steps = db.query(JobStep).filter(JobStep.job_id == job.id).order_by(JobStep.id.asc()).all()
 
             self.assertEqual(refreshed_job.status, "done")
-            self.assertEqual([step.step_name for step in steps], ["downloading", "extracting_audio", "transcribing", "analyzing"])
-            self.assertTrue(all(step.status == "skipped" for step in steps))
+            self.assertEqual([step.step_name for step in steps], ["downloading", "extracting_audio", "transcribing", "analyzing", "llm_enrichment"])
+            self.assertTrue(all(step.status == "skipped" for step in steps[:-1]))
+            self.assertEqual(steps[-1].status, "completed")
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_records_analysis_heartbeat_progress(self):
+        job = self._create_job(
+            status="pending",
+            title="Video longo",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path="C:/tmp/transcript.json",
+        )
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 2}),
+        ):
+            process_job_pipeline(job.id, start_from_step="analyzing")
+
+        db = self._session()
+        try:
+            analyzing_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "analyzing")
+                .one()
+            )
+            self.assertIn('"progress_message": "Gerando candidatos iniciais"', analyzing_step.details)
+            self.assertIn('"heartbeat_at":', analyzing_step.details)
+            self.assertIn('"progress_percent":', analyzing_step.details)
+
+            llm_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "llm_enrichment")
+                .one()
+            )
+            self.assertIn('"insights_generated": true', llm_step.details.lower())
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_records_analysis_progress_percent_during_candidate_generation(self):
+        job = self._create_job(
+            status="pending",
+            title="Video longo",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path="C:/tmp/transcript.json",
+        )
+
+        def fake_candidates(db, job, *, modes=("short",), force=False, progress_callback=None):
+            if progress_callback:
+                progress_callback("Montando janelas candidatas", 66)
+                progress_callback("Pontuando 120 candidato(s) iniciais", 76)
+                progress_callback("Aplicando rerank e ordenacao final", 88)
+                progress_callback("Persistindo candidatos aprovados (120/120)", 96)
+            return {"short": 120}
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", side_effect=fake_candidates),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
+        ):
+            process_job_pipeline(job.id, start_from_step="analyzing")
+
+        db = self._session()
+        try:
+            analyzing_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "analyzing")
+                .one()
+            )
+            self.assertIn('"progress_percent": 96', analyzing_step.details)
+            self.assertIn("Persistindo candidatos aprovados", analyzing_step.details)
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_records_transcription_heartbeat_progress(self):
+        job = self._create_job(
+            status="pending",
+            title="Video longo",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path=None,
+        )
+
+        def fake_transcribe(audio_path, job_id, progress_callback=None):
+            if progress_callback:
+                progress_callback("Carregando modelo Whisper (base)")
+                progress_callback("Executando transcricao do audio")
+                progress_callback("Salvando transcricao em JSON")
+            return "C:/tmp/generated_transcript.json"
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch(
+                "app.services.pipeline._path_exists",
+                side_effect=lambda value: value in {"C:/tmp/video.mp4", "C:/tmp/audio.mp3"},
+            ),
+            patch("app.services.pipeline.transcribe_audio", side_effect=fake_transcribe),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 2}),
+        ):
+            process_job_pipeline(job.id, start_from_step="transcribing")
+
+        db = self._session()
+        try:
+            transcribing_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "transcribing")
+                .one()
+            )
+            self.assertIn('"progress_message": "Salvando transcricao em JSON"', transcribing_step.details)
+            self.assertIn('"heartbeat_at":', transcribing_step.details)
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_completes_when_llm_insights_fail(self):
+        job = self._create_job(
+            status="pending",
+            title="Video longo",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path="C:/tmp/transcript.json",
+            detected_niche=None,
+            niche_confidence=None,
+        )
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.analyze_transcript_context", side_effect=RuntimeError("llm timeout")),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 2}),
+        ):
+            process_job_pipeline(job.id, start_from_step="analyzing")
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            llm_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "llm_enrichment")
+                .one()
+            )
+            self.assertEqual(refreshed_job.status, "done")
+            self.assertIn('"llm_insights_skipped": true', llm_step.details.lower())
+            self.assertIn('"llm_insights_error": "llm timeout"', llm_step.details.lower())
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_opens_llm_circuit_breaker_after_repeated_failures(self):
+        job = self._create_job(
+            status="pending",
+            title="Video longo",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path="C:/tmp/transcript.json",
+            detected_niche="podcast",
+            niche_confidence="alta",
+        )
+
+        db = self._session()
+        try:
+            db.add(
+                JobStep(
+                    job_id=job.id,
+                    step_name="llm_enrichment",
+                    status="failed",
+                    attempts=2,
+                    error_message="llm timeout",
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.analyze_transcript_context") as mocked_llm,
+        ):
+            process_job_pipeline(job.id, start_from_step="llm_enrichment")
+
+        mocked_llm.assert_not_called()
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            llm_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "llm_enrichment")
+                .one()
+            )
+            self.assertEqual(refreshed_job.status, "done")
+            self.assertIn('"llm_circuit_breaker_opened": true', llm_step.details.lower())
+            self.assertIn('"skip_llm_insights": true', llm_step.details.lower())
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_cancels_running_job(self):
+        job = self._create_job(
+            status="pending",
+            title="Video longo",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path=None,
+        )
+
+        cancel_triggered = {"done": False}
+
+        def fake_transcribe(audio_path, job_id, progress_callback=None):
+            if progress_callback:
+                progress_callback("Carregando modelo Whisper (base)")
+            db = self._session()
+            try:
+                running_job = db.query(Job).filter(Job.id == job_id).one()
+                running_job.status = "cancel_requested"
+                running_job.error_message = "Cancelamento solicitado pelo usuario."
+                db.commit()
+            finally:
+                db.close()
+            cancel_triggered["done"] = True
+            if progress_callback:
+                progress_callback("Executando transcricao do audio")
+            return "C:/tmp/should_not_finish.json"
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch(
+                "app.services.pipeline._path_exists",
+                side_effect=lambda value: value in {"C:/tmp/video.mp4", "C:/tmp/audio.mp3"},
+            ),
+            patch("app.services.pipeline.transcribe_audio", side_effect=fake_transcribe),
+        ):
+            process_job_pipeline(job.id, start_from_step="transcribing")
+
+        self.assertTrue(cancel_triggered["done"])
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            transcribing_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "transcribing")
+                .one()
+            )
+            self.assertEqual(refreshed_job.status, "canceled")
+            self.assertEqual(refreshed_job.error_message, "Processamento cancelado pelo usuario.")
+            self.assertEqual(transcribing_step.status, "failed")
+            self.assertIn("Cancelado pelo usuario", transcribing_step.error_message)
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_queues_when_concurrency_limit_is_reached(self):
+        active_job = self._create_job(
+            status="transcribing",
+            title="Ativo",
+            video_path="C:/tmp/video_active.mp4",
+            audio_path="C:/tmp/audio_active.mp3",
+            transcript_path=None,
+        )
+        queued_job = self._create_job(
+            status="pending",
+            title="Na fila",
+            video_path="C:/tmp/video_pending.mp4",
+            audio_path="C:/tmp/audio_pending.mp3",
+            transcript_path=None,
+        )
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch.object(__import__("app.services.pipeline", fromlist=["settings"]).settings, "max_concurrent_pipeline_jobs", 1),
+        ):
+            process_job_pipeline(queued_job.id, start_from_step="transcribing")
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == queued_job.id).one()
+            self.assertEqual(refreshed_job.status, "pending")
+            self.assertIn("Aguardando vaga na fila de processamento", refreshed_job.error_message)
+            self.assertEqual(
+                db.query(JobStep).filter(JobStep.job_id == queued_job.id, JobStep.step_name == "transcribing").count(),
+                0,
+            )
+            self.assertEqual(db.query(Job).filter(Job.id == active_job.id).one().status, "transcribing")
+        finally:
+            db.close()
+
+    def test_process_job_pipeline_drains_next_pending_job_after_completion(self):
+        first_job = self._create_job(
+            status="pending",
+            title="Primeiro",
+            video_path="C:/tmp/video_first.mp4",
+            audio_path="C:/tmp/audio_first.mp3",
+            transcript_path=None,
+        )
+        second_job = self._create_job(
+            status="pending",
+            title="Segundo",
+            video_path="C:/tmp/video_second.mp4",
+            audio_path="C:/tmp/audio_second.mp3",
+            transcript_path=None,
+        )
+
+        def fake_transcribe(audio_path, job_id, progress_callback=None):
+            if progress_callback:
+                progress_callback("Executando transcricao do audio")
+            return f"C:/tmp/transcript_{job_id}.json"
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch.object(__import__("app.services.pipeline", fromlist=["settings"]).settings, "max_concurrent_pipeline_jobs", 1),
+            patch(
+                "app.services.pipeline._path_exists",
+                side_effect=lambda value: value in {
+                    "C:/tmp/video_first.mp4",
+                    "C:/tmp/audio_first.mp3",
+                    "C:/tmp/video_second.mp4",
+                    "C:/tmp/audio_second.mp3",
+                    "C:/tmp/transcript_1.json",
+                    "C:/tmp/transcript_2.json",
+                },
+            ),
+            patch("app.services.pipeline.transcribe_audio", side_effect=fake_transcribe),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 1}),
+        ):
+            process_job_pipeline(first_job.id, start_from_step="transcribing")
+
+        db = self._session()
+        try:
+            refreshed_first = db.query(Job).filter(Job.id == first_job.id).one()
+            refreshed_second = db.query(Job).filter(Job.id == second_job.id).one()
+            self.assertEqual(refreshed_first.status, "done")
+            self.assertEqual(refreshed_second.status, "done")
+            self.assertIsNone(refreshed_second.error_message)
+        finally:
+            db.close()
+
+    def test_split_segments_into_time_chunks_keeps_overlap_for_large_transcript(self):
+        segments = [
+            {"start": 0.0, "end": 300.0, "text": "a"},
+            {"start": 300.0, "end": 600.0, "text": "b"},
+            {"start": 600.0, "end": 900.0, "text": "c"},
+            {"start": 900.0, "end": 1200.0, "text": "d"},
+        ]
+
+        chunks = split_segments_into_time_chunks(
+            segments,
+            chunk_duration_seconds=700.0,
+            overlap_seconds=120.0,
+        )
+
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertEqual(chunks[0][0]["start"], 0.0)
+        self.assertLessEqual(chunks[1][0]["start"], 600.0)
+        self.assertGreaterEqual(chunks[1][0]["start"], 300.0)
+        self.assertEqual(chunks[-1][-1]["end"], 1200.0)
+
+    def test_process_job_pipeline_persists_candidates_incrementally_by_chunk(self):
+        job = self._create_job(
+            status="pending",
+            title="Transcricao gigante",
+            video_path="C:/tmp/video.mp4",
+            audio_path="C:/tmp/audio.mp3",
+            transcript_path="C:/tmp/transcript.json",
+            detected_niche=None,
+            niche_confidence=None,
+        )
+
+        transcript_payload = {
+            "text": "texto longo " * 200,
+            "segments": [
+                {"start": 0.0, "end": 120.0, "text": "abertura"},
+                {"start": 120.0, "end": 240.0, "text": "contexto"},
+                {"start": 240.0, "end": 360.0, "text": "gancho"},
+                {"start": 960.0, "end": 1080.0, "text": "virada"},
+                {"start": 1080.0, "end": 1200.0, "text": "fechamento"},
+                {"start": 1200.0, "end": 1320.0, "text": "cta"},
+            ],
+        }
+
+        def fake_score_candidates(candidates, **kwargs):
+            scored = []
+            for index, candidate in enumerate(candidates, start=1):
+                item = dict(candidate)
+                item["score"] = 9.5 - (index * 0.1)
+                item["base_score"] = item["score"]
+                item["reason"] = f"candidato {index}"
+                scored.append(item)
+            return scored[:1]
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch("app.services.pipeline._path_exists", return_value=True),
+            patch("app.services.pipeline.load_transcript", return_value={"text": transcript_payload["text"]}),
+            patch("app.services.candidates.load_segments", return_value=transcript_payload["segments"]),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
+            patch("app.services.candidates.score_candidates", side_effect=fake_score_candidates),
+        ):
+            process_job_pipeline(job.id, start_from_step="analyzing")
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            analyzing_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "analyzing")
+                .one()
+            )
+            candidates = (
+                db.query(Candidate)
+                .filter(Candidate.job_id == job.id, Candidate.mode == "short")
+                .order_by(Candidate.created_at.asc(), Candidate.id.asc())
+                .all()
+            )
+            self.assertEqual(refreshed_job.status, "done")
+            self.assertGreaterEqual(len(candidates), 2)
+            self.assertIn("chunk", (analyzing_step.details or "").lower())
+        finally:
+            db.close()
+
+    def test_cancel_running_job_releases_slot_and_starts_next_pending_job(self):
+        running_job = self._create_job(
+            status="transcribing",
+            title="Cancelando agora",
+            video_path="C:/tmp/video_running.mp4",
+            audio_path="C:/tmp/audio_running.mp3",
+            transcript_path=None,
+        )
+        queued_job = self._create_job(
+            status="pending",
+            title="Proximo da fila",
+            video_path="C:/tmp/video_queued.mp4",
+            audio_path="C:/tmp/audio_queued.mp3",
+            transcript_path=None,
+        )
+
+        db = self._session()
+        try:
+            db.add(JobStep(job_id=running_job.id, step_name="transcribing", status="running", attempts=1))
+            db.commit()
+        finally:
+            db.close()
+
+        def fake_transcribe(audio_path, job_id, progress_callback=None):
+            if progress_callback:
+                progress_callback("Executando transcricao do audio")
+            return f"C:/tmp/transcript_{job_id}.json"
+
+        with (
+            patch("app.services.pipeline.SessionLocal", self.TestingSessionLocal),
+            patch.object(__import__("app.services.pipeline", fromlist=["settings"]).settings, "max_concurrent_pipeline_jobs", 1),
+            patch(
+                "app.services.pipeline._path_exists",
+                side_effect=lambda value: value in {
+                    "C:/tmp/video_running.mp4",
+                    "C:/tmp/audio_running.mp3",
+                    "C:/tmp/video_queued.mp4",
+                    "C:/tmp/audio_queued.mp3",
+                    "C:/tmp/transcript_2.json",
+                },
+            ),
+            patch("app.services.pipeline.transcribe_audio", side_effect=fake_transcribe),
+            patch("app.services.pipeline.load_transcript", return_value={"text": "texto teste bem longo"}),
+            patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 1}),
+        ):
+            response = self.client.post(f"/jobs/{running_job.id}/cancel")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "cancel_requested")
+
+        db = self._session()
+        try:
+            refreshed_running = db.query(Job).filter(Job.id == running_job.id).one()
+            refreshed_queued = db.query(Job).filter(Job.id == queued_job.id).one()
+            self.assertEqual(refreshed_running.status, "cancel_requested")
+            self.assertEqual(refreshed_queued.status, "done")
+            self.assertEqual(refreshed_queued.transcript_path, "C:/tmp/transcript_2.json")
+            self.assertIsNone(refreshed_queued.error_message)
         finally:
             db.close()
 
@@ -1514,6 +2498,13 @@ class RoutesTestCase(unittest.TestCase):
 
             refreshed_job = db.query(Job).filter(Job.id == job.id).one()
             self.assertIn("priority_keywords", refreshed_job.transcript_insights)
+
+            llm_step = (
+                db.query(JobStep)
+                .filter(JobStep.job_id == job.id, JobStep.step_name == "llm_enrichment")
+                .one()
+            )
+            self.assertEqual(llm_step.status, "completed")
         finally:
             db.close()
 
@@ -1728,6 +2719,47 @@ class RoutesTestCase(unittest.TestCase):
         self.assertTrue(response.json()["force"])
         mocked_pipeline.assert_called_once_with(job.id, True)
 
+    def test_cancel_job_endpoint_requests_cancellation(self):
+        job = self._create_job(status="transcribing")
+
+        db = self._session()
+        try:
+            db.add(JobStep(job_id=job.id, step_name="transcribing", status="running", attempts=1))
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.post(f"/jobs/{job.id}/cancel")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "cancel_requested")
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            self.assertEqual(refreshed_job.status, "cancel_requested")
+            self.assertEqual(refreshed_job.error_message, "Cancelamento solicitado pelo usuario.")
+        finally:
+            db.close()
+
+    def test_cancel_job_endpoint_cancels_queued_job_immediately(self):
+        job = self._create_job(status="pending", title="Na fila tecnica")
+
+        response = self.client.post(f"/jobs/{job.id}/cancel")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "canceled")
+
+        db = self._session()
+        try:
+            refreshed_job = db.query(Job).filter(Job.id == job.id).one()
+            self.assertEqual(refreshed_job.status, "canceled")
+            self.assertEqual(refreshed_job.error_message, "Processamento cancelado pelo usuario.")
+        finally:
+            db.close()
+
     def test_retry_job_step_endpoint_requeues_specific_step(self):
         job = self._create_job(
             status="failed",
@@ -1925,6 +2957,8 @@ class RoutesTestCase(unittest.TestCase):
             patch("app.services.pipeline.transcribe_audio", return_value="C:/tmp/forced_recovery.json"),
             patch("app.services.pipeline.load_transcript", return_value={"text": "texto recuperado com force"}),
             patch("app.services.pipeline.detect_niche", return_value={"niche": "podcast", "confidence": "alta"}),
+            patch("app.services.pipeline.ensure_default_candidates_for_job", return_value={"short": 1}),
+            patch("app.services.pipeline.analyze_transcript_context", return_value={"main_topics": ["tema"]}),
         ):
             process_job_pipeline(job.id, force=True)
 
@@ -1980,6 +3014,87 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
+    def test_render_manual_accepts_hhmmss_timecodes(self):
+        job = self._create_job()
+
+        with (
+            patch("app.services.render_workflow.generate_ass_for_clip", return_value="C:/tmp/clip.ass"),
+            patch("app.services.render_workflow.render_clip", return_value="C:/tmp/clip_timecode.mp4"),
+        ):
+            response = self.client.post(
+                f"/jobs/{job.id}/render-manual",
+                json={
+                    "start": "00:00:12",
+                    "end": "00:01:45",
+                    "burn_subtitles": False,
+                    "mode": "short",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["start"], 12.0)
+        self.assertEqual(data["end"], 105.0)
+        self.assertEqual(data["duration"], 93.0)
+
+    def test_render_manual_from_page_accepts_hour_minute_second_fields(self):
+        job = self._create_job()
+
+        with (
+            patch("app.services.render_workflow.generate_ass_for_clip", return_value="C:/tmp/clip.ass"),
+            patch("app.services.render_workflow.render_clip", return_value="C:/tmp/clip_page.mp4"),
+        ):
+            response = self.client.post(
+                f"/jobs/{job.id}/view/render-manual",
+                data={
+                    "start_hours": "0",
+                    "start_minutes": "0",
+                    "start_seconds": "30",
+                    "end_hours": "0",
+                    "end_minutes": "1",
+                    "end_seconds": "20",
+                    "mode": "short",
+                    "render_preset": "clean",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(f"/jobs/{job.id}/view", response.headers["location"])
+
+        db = self._session()
+        try:
+            clip = db.query(Clip).order_by(Clip.id.desc()).first()
+            self.assertIsNotNone(clip)
+            self.assertEqual(clip.start_time, 30.0)
+            self.assertEqual(clip.end_time, 80.0)
+            self.assertEqual(clip.duration, 50.0)
+        finally:
+            db.close()
+
+    def test_render_manual_from_page_warns_when_subtitles_requested_without_transcript(self):
+        job = self._create_job(transcript_path=None)
+
+        with patch("app.services.render_workflow.render_clip", return_value="C:/tmp/clip_page_no_transcript.mp4"):
+            response = self.client.post(
+                f"/jobs/{job.id}/view/render-manual",
+                data={
+                    "start_hours": "0",
+                    "start_minutes": "0",
+                    "start_seconds": "10",
+                    "end_hours": "0",
+                    "end_minutes": "0",
+                    "end_seconds": "40",
+                    "mode": "short",
+                    "render_preset": "clean",
+                    "burn_subtitles": "true",
+                },
+                follow_redirects=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Render concluido sem legenda embutida porque este job ainda nao possui transcricao.", response.text)
+
     def test_render_manual_rejects_invalid_time_range(self):
         job = self._create_job()
 
@@ -1995,6 +3110,25 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "end deve ser maior que start")
+
+    def test_render_manual_without_transcript_still_creates_clip_without_subtitles(self):
+        job = self._create_job(transcript_path=None)
+
+        with patch("app.services.render_workflow.render_clip", return_value="C:/tmp/clip_manual_no_transcript.mp4"):
+            response = self.client.post(
+                f"/jobs/{job.id}/render-manual",
+                json={
+                    "start": 12.0,
+                    "end": 45.0,
+                    "burn_subtitles": True,
+                    "mode": "short",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["subtitles_burned"])
+        self.assertEqual(data["output_path"], "C:/tmp/clip_manual_no_transcript.mp4")
 
     def test_candidate_status_endpoints_update_status(self):
         job = self._create_job()

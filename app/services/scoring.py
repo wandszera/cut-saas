@@ -232,7 +232,7 @@ def _contains_any(text: str, keywords: list[str]) -> int:
     return sum(1 for kw in keywords if kw in normalized)
 
 
-def _duration_fit_score(duration: float, mode: str) -> tuple[float, str]:
+def _duration_fit_score(duration: float, mode: str, calibration_profile: dict | None = None) -> tuple[float, str]:
     if mode == "long":
         target = 600.0
         min_d = 300.0
@@ -258,7 +258,8 @@ def _duration_fit_score(duration: float, mode: str) -> tuple[float, str]:
         return -6.0, "fora da faixa ideal de short"
 
     diff = abs(duration - target)
-    if duration > 120:
+    preferred_short_max = float((calibration_profile or {}).get("preferred_short_max_seconds", 120.0) or 120.0)
+    if duration > preferred_short_max:
         return 0.5, "longo demais para short competitivo"
     if diff <= 15:
         return 5.0, "muito bem encaixado na duração alvo"
@@ -300,14 +301,15 @@ def _hook_score(opening_text: str, mode: str) -> tuple[float, list[str]]:
     return score, reasons
 
 
-def _opening_strength_score(candidate: dict, mode: str) -> tuple[float, list[str]]:
+def _opening_strength_score(candidate: dict, mode: str, calibration_profile: dict | None = None) -> tuple[float, list[str]]:
     opening = _normalize(candidate.get("opening_text", ""))
     text = _normalize(candidate.get("text", ""))
+    informative_multiplier = float((calibration_profile or {}).get("informative_opening_multiplier", 1.0) or 1.0)
     score = 0.0
     reasons = []
 
     if any(opening.startswith(pattern) for pattern in INFORMATIVE_OPENING_PATTERNS):
-        score -= 1.8
+        score -= 1.8 * informative_multiplier
         reasons.append("abertura mais informativa do que forte")
 
     if any(pattern in opening for pattern in STRONG_OPENING_PATTERNS):
@@ -545,27 +547,28 @@ def _repetition_penalty(full_text: str) -> tuple[float, list[str]]:
     return score, reasons
 
 
-def _context_dependency_penalty(candidate: dict) -> tuple[float, list[str]]:
+def _context_dependency_penalty(candidate: dict, calibration_profile: dict | None = None) -> tuple[float, list[str]]:
     score = 0.0
     reasons = []
     text = _normalize(candidate.get("text", ""))
     opening = _normalize(candidate.get("opening_text", ""))
+    context_multiplier = float((calibration_profile or {}).get("context_penalty_multiplier", 1.0) or 1.0)
 
     context_hits = _contains_any(text, CONTEXT_DEPENDENCY_PATTERNS)
     if context_hits:
-        score -= min(2.4, context_hits * 0.8)
+        score -= min(2.4 * context_multiplier, context_hits * 0.8 * context_multiplier)
         reasons.append("trecho dependente de contexto externo")
 
     if opening.startswith(("então", "entao", "bom", "agora", "daí", "dai")) and not candidate.get("starts_clean"):
-        score -= 0.8
+        score -= 0.8 * context_multiplier
         reasons.append("abertura com transição contextual")
 
     if not candidate.get("starts_clean") and opening.startswith(("ele ", "ela ", "eles ", "elas ", "isso ", "esse ", "essa ", "aqui ")):
-        score -= 1.0
+        score -= 1.0 * context_multiplier
         reasons.append("começa sem referente claro")
 
     if _word_count(opening) < 7 and not candidate.get("starts_clean"):
-        score -= 0.6
+        score -= 0.6 * context_multiplier
         reasons.append("abertura curta demais para se sustentar sozinha")
 
     return score, reasons
@@ -714,6 +717,7 @@ def _score_candidate(
     feedback_profile: dict | None,
     transcript_insights: dict | None,
     niche_profile: dict | None,
+    calibration_profile: dict | None,
 ) -> dict:
     duration = float(candidate.get("duration", 0))
     text = candidate.get("text", "")
@@ -724,7 +728,7 @@ def _score_candidate(
     total_score = 0.0
     reasons = []
 
-    duration_fit_score, duration_reasons = _duration_fit_score(duration, mode)
+    duration_fit_score, duration_reasons = _duration_fit_score(duration, mode, calibration_profile)
     total_score += duration_fit_score * weights["duration_fit"]
     reasons.append(duration_reasons)
 
@@ -732,7 +736,7 @@ def _score_candidate(
     total_score += hook_score * weights["hook"]
     reasons.extend(hook_reasons)
 
-    opening_strength_score, opening_strength_reasons = _opening_strength_score(candidate, mode)
+    opening_strength_score, opening_strength_reasons = _opening_strength_score(candidate, mode, calibration_profile)
     total_score += opening_strength_score * weights["hook"]
     reasons.extend(opening_strength_reasons)
 
@@ -769,7 +773,7 @@ def _score_candidate(
     total_score += repetition_penalty * weights["repetition_penalty"]
     reasons.extend(repetition_reasons)
 
-    context_penalty, context_reasons = _context_dependency_penalty(candidate)
+    context_penalty, context_reasons = _context_dependency_penalty(candidate, calibration_profile)
     total_score += context_penalty * weights["context_penalty"]
     reasons.extend(context_reasons)
 
@@ -870,9 +874,14 @@ def _time_overlap_ratio(left: dict, right: dict) -> float:
     return overlap / shorter
 
 
-def _apply_diversity_reranking(candidates: list[dict], diversity_weight: float) -> list[dict]:
+def _apply_diversity_reranking(
+    candidates: list[dict],
+    diversity_weight: float,
+    calibration_profile: dict | None = None,
+) -> list[dict]:
     selected: list[dict] = []
     remaining = sorted(candidates, key=lambda item: item["base_score"], reverse=True)
+    diversity_multiplier = float((calibration_profile or {}).get("diversity_penalty_multiplier", 1.0) or 1.0)
 
     while remaining:
         best_choice = None
@@ -896,7 +905,7 @@ def _apply_diversity_reranking(candidates: list[dict], diversity_weight: float) 
             if max_overlap >= 0.7 and opening_similarity >= 0.75:
                 diversity_penalty += 1.6
             diversity_penalty = round(diversity_penalty, 2)
-            effective_score = candidate["base_score"] - (diversity_penalty * diversity_weight)
+            effective_score = candidate["base_score"] - (diversity_penalty * diversity_weight * diversity_multiplier)
 
             if best_effective_score is None or effective_score > best_effective_score:
                 best_choice = {
@@ -933,6 +942,7 @@ def score_candidates(
     feedback_profile: dict | None = None,
     transcript_insights: dict | None = None,
     niche_profile: dict | None = None,
+    calibration_profile: dict | None = None,
 ) -> list[dict]:
     weights = _get_niche_weights(niche, niche_profile=niche_profile)
     scored = [
@@ -945,7 +955,8 @@ def score_candidates(
             feedback_profile=feedback_profile,
             transcript_insights=transcript_insights,
             niche_profile=niche_profile,
+            calibration_profile=calibration_profile,
         )
         for candidate in candidates
     ]
-    return _apply_diversity_reranking(scored, weights["diversity_penalty"])
+    return _apply_diversity_reranking(scored, weights["diversity_penalty"], calibration_profile)

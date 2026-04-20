@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     llm_model: str = "qwen2.5:7b"
     llm_top_n: int = 12
+    llm_timeout_seconds: float = 20.0
+    max_concurrent_pipeline_jobs: int = 1
     ollama_base_url: str = "http://127.0.0.1:11434"
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"

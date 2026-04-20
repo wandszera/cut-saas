@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.sql import func
+
 from app.db.database import Base
 
 
@@ -32,12 +33,15 @@ class Job(Base):
         labels = {
             "pending": "Na fila",
             "downloading": "Baixando...",
-            "extracting_audio": "Extraindo áudio...",
+            "extracting_audio": "Extraindo audio...",
             "transcribing": "Transcrevendo...",
             "analyzing": "Analisando...",
+            "llm_enrichment": "Enriquecendo LLM...",
             "rendering": "Renderizando...",
-            "done": "Concluído",
-            "failed": "Erro"
+            "cancel_requested": "Cancelando...",
+            "canceled": "Cancelado",
+            "done": "Concluido",
+            "failed": "Erro",
         }
         return labels.get(self.status, self.status)
 
@@ -49,8 +53,11 @@ class Job(Base):
             "extracting_audio": 40,
             "transcribing": 70,
             "analyzing": 85,
+            "llm_enrichment": 90,
             "rendering": 95,
+            "cancel_requested": 92,
+            "canceled": 0,
             "done": 100,
-            "failed": 0
+            "failed": 0,
         }
         return progress_map.get(self.status, 0)

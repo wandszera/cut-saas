@@ -22,7 +22,7 @@ def render_candidate_clip(
 ) -> tuple[Clip, str | None, str]:
     effective_clip_index = candidate.id if clip_index is None else clip_index
     subtitles_path = None
-    if burn_subtitles:
+    if burn_subtitles and job.transcript_path:
         subtitles_path = generate_ass_for_clip(
             transcript_path=job.transcript_path,
             job_id=job.id,
@@ -40,7 +40,7 @@ def render_candidate_clip(
         start=candidate.start_time,
         end=candidate.end_time,
         mode=candidate.mode,
-        burn_subtitles=burn_subtitles,
+        burn_subtitles=bool(subtitles_path),
         subtitles_path=subtitles_path,
         render_preset=render_preset,
     )
@@ -55,7 +55,7 @@ def render_candidate_clip(
         score=candidate.score,
         reason=candidate.reason,
         text=candidate.full_text,
-        subtitles_burned=burn_subtitles,
+        subtitles_burned=bool(subtitles_path),
         output_path=output_path,
         render_preset=render_preset,
     )
@@ -133,7 +133,7 @@ def render_manual_clip(
 ) -> tuple[Clip, str | None, str]:
     duration = round(end - start, 2)
     subtitles_path = None
-    if burn_subtitles:
+    if burn_subtitles and job.transcript_path:
         subtitles_path = generate_ass_for_clip(
             transcript_path=job.transcript_path,
             job_id=job.id,
@@ -151,7 +151,7 @@ def render_manual_clip(
         start=start,
         end=end,
         mode=mode,
-        burn_subtitles=burn_subtitles,
+        burn_subtitles=bool(subtitles_path),
         subtitles_path=subtitles_path,
         render_preset=render_preset,
     )
@@ -166,7 +166,7 @@ def render_manual_clip(
         score=None,
         reason=reason,
         text=None,
-        subtitles_burned=burn_subtitles,
+        subtitles_burned=bool(subtitles_path),
         output_path=output_path,
         render_preset=render_preset,
     )

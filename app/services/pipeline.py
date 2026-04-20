@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.database import SessionLocal
 from app.models.job import Job
 from app.models.job_step import JobStep
@@ -23,9 +24,18 @@ PIPELINE_STEPS = (
     "extracting_audio",
     "transcribing",
     "analyzing",
+    "llm_enrichment",
 )
+ACTIVE_PIPELINE_JOB_STATUSES = {
+    "downloading",
+    "extracting_audio",
+    "transcribing",
+    "analyzing",
+    "llm_enrichment",
+}
 MAX_STEP_ATTEMPTS = 3
 logger = logging.getLogger(__name__)
+LLM_ENRICHMENT_MAX_FAILURES_BEFORE_SKIP = 2
 
 
 class StepExhaustedError(RuntimeError):
@@ -36,6 +46,10 @@ class StepExhaustedError(RuntimeError):
         super().__init__(
             f"Etapa '{step_name}' excedeu o limite de tentativas ({attempts}/{max_attempts})"
         )
+
+
+class PipelineCanceledError(RuntimeError):
+    pass
 
 
 def _utcnow() -> datetime:
@@ -122,6 +136,54 @@ def _get_or_create_step(db: Session, job_id: int, step_name: str) -> JobStep:
     return step
 
 
+def _is_cancel_requested(job: Job) -> bool:
+    return (job.status or "").strip().lower() == "cancel_requested"
+
+
+def _ensure_not_canceled(db: Session, job: Job, step_name: str) -> None:
+    db.refresh(job)
+    if _is_cancel_requested(job):
+        raise PipelineCanceledError(f"Cancelamento solicitado durante a etapa '{step_name}'")
+
+
+def _finalize_canceled_job(
+    db: Session,
+    job: Job,
+    *,
+    message: str = "Processamento cancelado pelo usuario.",
+) -> None:
+    job.status = "canceled"
+    job.error_message = message
+    db.commit()
+
+
+def request_job_cancellation(db: Session, job: Job) -> None:
+    running_step = (
+        db.query(JobStep)
+        .filter(JobStep.job_id == job.id, JobStep.status == "running")
+        .order_by(JobStep.id.desc())
+        .first()
+    )
+    if running_step:
+        job.status = "cancel_requested"
+        job.error_message = "Cancelamento solicitado pelo usuario."
+        details = _merge_details(
+            _deserialize_details(running_step.details),
+            {
+                "cancel_requested": True,
+                "progress_message": "Cancelamento solicitado pelo usuario",
+                "heartbeat_at": _utcnow().isoformat(),
+            },
+        )
+        running_step.details = _serialize_details(details)
+        db.commit()
+        _kick_next_pending_job(job.id)
+        return
+
+    _finalize_canceled_job(db, job)
+    _kick_next_pending_job(job.id)
+
+
 def mark_step_running(
     db: Session,
     job: Job,
@@ -189,6 +251,42 @@ def mark_step_running(
         attempt=step.attempts,
         status=step.status,
         details=running_details,
+    )
+    return step
+
+
+def update_step_progress(
+    db: Session,
+    job: Job,
+    step_name: str,
+    *,
+    progress_message: str,
+    progress_percent: int | float | None = None,
+    details: dict[str, Any] | None = None,
+) -> JobStep:
+    normalized_progress = None
+    if progress_percent is not None:
+        normalized_progress = max(0, min(100, int(round(float(progress_percent)))))
+    step = _get_or_create_step(db, job.id, step_name)
+    progress_details = _merge_details(
+        _deserialize_details(step.details),
+        details,
+        {
+            "progress_message": progress_message,
+            "heartbeat_at": _utcnow().isoformat(),
+            "progress_percent": normalized_progress,
+        },
+    )
+    step.details = _serialize_details(progress_details)
+    db.commit()
+    db.refresh(step)
+    _log_step_event(
+        "step_progress",
+        job.id,
+        step_name,
+        attempt=step.attempts,
+        status=step.status,
+        details=progress_details,
     )
     return step
 
@@ -367,6 +465,8 @@ def reset_pipeline_state_from_step(
     if "analyzing" in steps_to_reset:
         job.detected_niche = None
         job.niche_confidence = None
+    if "llm_enrichment" in steps_to_reset:
+        job.transcript_insights = None
 
     job.status = "pending"
     job.error_message = None
@@ -376,6 +476,88 @@ def reset_pipeline_state_from_step(
 
 def _path_exists(path_value: str | None) -> bool:
     return bool(path_value) and Path(path_value).exists()
+
+
+def _build_queue_message(queue_position: int) -> str:
+    if queue_position <= 1:
+        return "Aguardando vaga na fila de processamento."
+    return f"Aguardando vaga na fila de processamento ({queue_position - 1} na frente)."
+
+
+def _count_active_pipeline_jobs(db: Session, *, exclude_job_id: int | None = None) -> int:
+    query = db.query(Job).filter(Job.status.in_(ACTIVE_PIPELINE_JOB_STATUSES))
+    if exclude_job_id is not None:
+        query = query.filter(Job.id != exclude_job_id)
+    return query.count()
+
+
+def _compute_pending_queue_position(db: Session, job: Job) -> int:
+    pending_jobs = (
+        db.query(Job)
+        .filter(Job.status == "pending")
+        .order_by(Job.created_at.asc(), Job.id.asc())
+        .all()
+    )
+    for index, pending_job in enumerate(pending_jobs, start=1):
+        if pending_job.id == job.id:
+            return index
+    return len(pending_jobs) + 1
+
+
+def _try_acquire_pipeline_slot(db: Session, job: Job) -> bool:
+    max_jobs = max(1, int(settings.max_concurrent_pipeline_jobs or 1))
+    active_jobs = _count_active_pipeline_jobs(db, exclude_job_id=job.id)
+    if active_jobs < max_jobs:
+        if job.status == "pending" and (job.error_message or "").startswith("Aguardando vaga na fila"):
+            job.error_message = None
+            db.commit()
+        return True
+
+    queue_position = _compute_pending_queue_position(db, job)
+    job.status = "pending"
+    job.error_message = _build_queue_message(queue_position)
+    db.commit()
+    _log_step_event(
+        "job_queued",
+        job.id,
+        "pipeline",
+        status=job.status,
+        details={
+            "queue_position": queue_position,
+            "active_jobs": active_jobs,
+            "max_concurrent_pipeline_jobs": max_jobs,
+        },
+    )
+    return False
+
+
+def _kick_next_pending_job(current_job_id: int | None = None) -> None:
+    db = SessionLocal()
+    try:
+        available_slots = max(
+            0,
+            int(settings.max_concurrent_pipeline_jobs or 1) - _count_active_pipeline_jobs(db),
+        )
+        if available_slots <= 0:
+            return
+
+        queued_jobs = (
+            db.query(Job)
+            .filter(Job.status == "pending")
+            .order_by(Job.created_at.asc(), Job.id.asc())
+            .all()
+        )
+    finally:
+        db.close()
+
+    launched = 0
+    for queued_job in queued_jobs:
+        if current_job_id is not None and queued_job.id == current_job_id:
+            continue
+        if launched >= available_slots:
+            break
+        process_job_pipeline(queued_job.id)
+        launched += 1
 
 
 def _run_download_step(db: Session, job: Job, *, force: bool = False) -> None:
@@ -451,7 +633,28 @@ def _run_transcription_step(db: Session, job: Job, *, force: bool = False) -> No
         force=force,
         details={"audio_path": job.audio_path},
     )
-    job.transcript_path = transcribe_audio(job.audio_path, job.id)
+    update_step_progress(
+        db,
+        job,
+        "transcribing",
+        progress_message="Preparando transcricao do audio",
+        details={"audio_path": job.audio_path},
+    )
+
+    def _transcription_progress(message: str) -> None:
+        _ensure_not_canceled(db, job, "transcribing")
+        update_step_progress(
+            db,
+            job,
+            "transcribing",
+            progress_message=message,
+        )
+
+    job.transcript_path = transcribe_audio(
+        job.audio_path,
+        job.id,
+        progress_callback=_transcription_progress,
+    )
     db.commit()
     mark_step_completed(
         db,
@@ -461,7 +664,12 @@ def _run_transcription_step(db: Session, job: Job, *, force: bool = False) -> No
     )
 
 
-def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
+def _run_analyze_step(
+    db: Session,
+    job: Job,
+    *,
+    force: bool = False,
+) -> None:
     if job.detected_niche and job.niche_confidence:
         mark_step_skipped(
             db,
@@ -483,22 +691,53 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
         force=force,
         details={"transcript_path": job.transcript_path},
     )
+    update_step_progress(
+        db,
+        job,
+        "analyzing",
+        progress_message="Carregando transcricao para analise",
+        progress_percent=18,
+    )
     transcript_data = load_transcript(job.transcript_path)
     transcript_text = transcript_data.get("text", "")
 
+    update_step_progress(
+        db,
+        job,
+        "analyzing",
+        progress_message="Detectando nicho editorial",
+        progress_percent=34,
+        details={"transcript_characters": len(transcript_text)},
+    )
     niche_result = detect_niche(job.title, transcript_text, db=db)
     job.detected_niche = niche_result["niche"]
     job.niche_confidence = niche_result["confidence"]
-    try:
-        insights = analyze_transcript_context(job.title, transcript_text)
-    except Exception:
-        insights = {}
-    job.transcript_insights = json.dumps(insights, ensure_ascii=False) if insights else None
-    db.commit()
 
     candidate_summary = {}
     if _path_exists(job.transcript_path):
-        candidate_summary = ensure_default_candidates_for_job(db, job, modes=("short",), force=force)
+        update_step_progress(
+            db,
+            job,
+            "analyzing",
+            progress_message="Gerando candidatos iniciais",
+            progress_percent=52,
+        )
+        def _candidate_progress(message: str, percent: int | float | None = None) -> None:
+            update_step_progress(
+                db,
+                job,
+                "analyzing",
+                progress_message=message,
+                progress_percent=percent,
+            )
+
+        candidate_summary = ensure_default_candidates_for_job(
+            db,
+            job,
+            modes=("short",),
+            force=force,
+            progress_callback=_candidate_progress,
+        )
 
     mark_step_completed(
         db,
@@ -507,8 +746,153 @@ def _run_analyze_step(db: Session, job: Job, *, force: bool = False) -> None:
         details={
             "detected_niche": job.detected_niche,
             "niche_confidence": job.niche_confidence,
-            "insights_generated": bool(job.transcript_insights),
             "generated_candidates": candidate_summary,
+        },
+    )
+
+
+def complete_analysis_without_llm(db: Session, job: Job, *, force: bool = True) -> None:
+    if not job.transcript_path:
+        raise RuntimeError("Job precisa de transcricao para concluir a analise sem LLM")
+
+    mark_step_running(
+        db,
+        job,
+        "llm_enrichment",
+        force=force,
+        details={"transcript_path": job.transcript_path, "skip_llm_insights": True},
+    )
+    update_step_progress(
+        db,
+        job,
+        "llm_enrichment",
+        progress_message="Pulando enriquecimento da LLM por solicitacao do usuario",
+        details={"skip_llm_insights": True},
+    )
+    job.transcript_insights = None
+    db.commit()
+    mark_step_completed(
+        db,
+        job,
+        "llm_enrichment",
+        details={
+            "insights_generated": False,
+            "llm_insights_skipped": True,
+            "llm_insights_error": "skipped_by_user",
+            "skip_llm_insights": True,
+        },
+    )
+
+
+def _complete_llm_enrichment_as_skipped(
+    db: Session,
+    job: Job,
+    *,
+    reason: str,
+    force: bool = False,
+    details: dict[str, Any] | None = None,
+) -> None:
+    mark_step_running(
+        db,
+        job,
+        "llm_enrichment",
+        force=force,
+        details=_merge_details({"transcript_path": job.transcript_path}, details),
+    )
+    update_step_progress(
+        db,
+        job,
+        "llm_enrichment",
+        progress_message=reason,
+        details=_merge_details(details, {"skip_llm_insights": True}),
+    )
+    job.transcript_insights = None
+    db.commit()
+    mark_step_completed(
+        db,
+        job,
+        "llm_enrichment",
+        details=_merge_details(
+            details,
+            {
+                "insights_generated": False,
+                "llm_insights_skipped": True,
+                "llm_insights_error": reason,
+                "skip_llm_insights": True,
+            },
+        ),
+    )
+
+
+def _run_llm_enrichment_step(
+    db: Session,
+    job: Job,
+    *,
+    force: bool = False,
+) -> None:
+    if job.transcript_insights:
+        mark_step_skipped(
+            db,
+            job,
+            "llm_enrichment",
+            details={
+                "reason": "transcript_insights ja disponiveis",
+                "insights_generated": True,
+            },
+        )
+        return
+
+    existing_step = _get_or_create_step(db, job.id, "llm_enrichment")
+    if (existing_step.attempts or 0) >= LLM_ENRICHMENT_MAX_FAILURES_BEFORE_SKIP and not force:
+        _complete_llm_enrichment_as_skipped(
+            db,
+            job,
+            reason="LLM pulada apos repetidas falhas recentes",
+            details={
+                "llm_circuit_breaker_opened": True,
+                "previous_attempts": existing_step.attempts or 0,
+            },
+        )
+        return
+
+    mark_step_running(
+        db,
+        job,
+        "llm_enrichment",
+        force=force,
+        details={"transcript_path": job.transcript_path},
+    )
+    update_step_progress(
+        db,
+        job,
+        "llm_enrichment",
+        progress_message="Gerando insights da transcricao",
+        details={
+            "detected_niche": job.detected_niche,
+            "niche_confidence": job.niche_confidence,
+        },
+    )
+
+    transcript_data = load_transcript(job.transcript_path)
+    transcript_text = transcript_data.get("text", "")
+    llm_insights_error = None
+    try:
+        _ensure_not_canceled(db, job, "llm_enrichment")
+        insights = analyze_transcript_context(job.title, transcript_text)
+    except Exception as exc:
+        llm_insights_error = str(exc)
+        insights = {}
+
+    job.transcript_insights = json.dumps(insights, ensure_ascii=False) if insights else None
+    db.commit()
+    mark_step_completed(
+        db,
+        job,
+        "llm_enrichment",
+        details={
+            "insights_generated": bool(job.transcript_insights),
+            "llm_insights_skipped": not bool(job.transcript_insights),
+            "llm_insights_error": llm_insights_error,
         },
     )
 
@@ -548,9 +932,14 @@ def process_job_pipeline(
                     MAX_STEP_ATTEMPTS,
                 )
 
+        if not _try_acquire_pipeline_slot(db, job):
+            print(f"[PIPELINE] Job {job.id} aguardando vaga na fila", flush=True)
+            return
+
         steps_to_run = get_steps_from(start_from_step) if start_from_step else PIPELINE_STEPS
 
         for step_name in steps_to_run:
+            _ensure_not_canceled(db, job, step_name)
             current_step = step_name
             if step_name == "downloading":
                 _run_download_step(db, job, force=force)
@@ -568,6 +957,12 @@ def process_job_pipeline(
                     f"niche_confidence={job.niche_confidence}",
                     flush=True,
                 )
+            elif step_name == "llm_enrichment":
+                _run_llm_enrichment_step(db, job, force=force)
+                print(
+                    f"[PIPELINE] status=llm_enrichment | insights_generated={bool(job.transcript_insights)}",
+                    flush=True,
+                )
 
         job.status = "done"
         job.error_message = None
@@ -578,7 +973,13 @@ def process_job_pipeline(
         print(f"[PIPELINE] ERRO em {current_step}: {e}", flush=True)
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
-            if isinstance(e, StepExhaustedError):
+            if isinstance(e, PipelineCanceledError):
+                if current_step:
+                    mark_step_failed(db, job, current_step, RuntimeError("Cancelado pelo usuario"))
+                job.status = "canceled"
+                job.error_message = "Processamento cancelado pelo usuario."
+                db.commit()
+            elif isinstance(e, StepExhaustedError):
                 job.status = "failed"
                 job.error_message = str(e)
                 db.commit()
@@ -590,3 +991,4 @@ def process_job_pipeline(
                 db.commit()
     finally:
         db.close()
+        _kick_next_pending_job(job_id)

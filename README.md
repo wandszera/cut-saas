@@ -9,12 +9,15 @@ Aplicacao local em FastAPI para baixar videos do YouTube, transcrever o audio, s
 - extrai o audio;
 - transcreve com Whisper;
 - detecta um nicho do conteudo;
-- gera janelas candidatas para cortes;
+- analisa a transcricao em chunks para videos longos;
+- gera candidatos de forma incremental, permitindo primeiros resultados antes do fim da analise inteira;
 - pontua os candidatos com heuristicas de gancho, clareza, fechamento, emocao e duracao;
+- separa analise heuristica de enriquecimento por LLM;
 - reranqueia candidatos com foco editorial para priorizar shorts mais enxutos, menos redundantes e com abertura mais forte;
 - renderiza clips com `ffmpeg`;
 - opcionalmente gera e queima legendas;
-- oferece interface web simples e endpoints HTTP.
+- oferece render manual mesmo sem concluir a analise;
+- oferece interface web operacional com monitoramento, fila e endpoints HTTP.
 
 ## Stack
 
@@ -44,6 +47,7 @@ data/
   transcripts/   transcricoes em JSON
   clips/         clips renderizados
   subtitles/     legendas geradas
+  uploads/       videos enviados manualmente
 video_cuts.db    banco SQLite local
 ```
 
@@ -51,9 +55,21 @@ video_cuts.db    banco SQLite local
 
 Estados tipicos do job:
 
-`pending -> downloading -> extracting_audio -> transcribing -> analyzing -> done`
+`pending -> downloading -> extracting_audio -> transcribing -> analyzing -> llm_enrichment -> done`
 
-Em caso de falha, o job vai para `failed` e registra `error_message`.
+Estados adicionais usados na operacao:
+
+- `cancel_requested`: cancelamento solicitado e aguardando checkpoint seguro;
+- `canceled`: job encerrado manualmente;
+- `failed`: erro com `error_message`;
+- `pending` com mensagem de fila: aguardando slot de concorrencia.
+
+Observacoes operacionais importantes:
+
+- a etapa `analyzing` agora pode persistir candidatos por chunk em videos longos;
+- a etapa `llm_enrichment` e opcional e pode ser pulada sem bloquear o job;
+- jobs cancelados liberam slot para o proximo item da fila;
+- a pagina do job mostra heartbeat, progresso percentual e sinais de possivel travamento.
 
 ## Qualidade editorial da analise
 
@@ -135,6 +151,8 @@ Variaveis relevantes:
 - `YTDLP_COOKIES_BROWSER_PROFILE`: perfil do navegador
 - `YTDLP_VERBOSE`: logs detalhados do `yt-dlp`
 - `WHISPER_MODEL`: modelo do Whisper, por exemplo `base`
+- `LLM_TIMEOUT_SECONDS`: timeout das chamadas de enriquecimento por LLM
+- `MAX_CONCURRENT_PIPELINE_JOBS`: limite de jobs pesados rodando ao mesmo tempo
 
 ## Como rodar
 
@@ -153,8 +171,16 @@ Depois abra:
 2. Envie uma URL do YouTube.
 3. Aguarde o processamento do job.
 4. Abra a pagina de detalhe do job.
-5. Revise os candidatos sugeridos.
-6. Renderize um candidato ou informe tempos manualmente.
+5. Acompanhe pipeline, heartbeat, fila e progresso no monitoramento da pagina.
+6. Revise os candidatos sugeridos, que podem aparecer de forma incremental durante `analyzing`.
+7. Renderize um candidato ou informe tempos manualmente.
+
+Atalhos uteis da interface:
+
+- cancelar processamento;
+- concluir analise sem LLM;
+- reprocessar etapa especifica;
+- render manual imediato mesmo sem transcricao finalizada.
 
 ## Rotas principais da API
 
@@ -167,10 +193,14 @@ Depois abra:
 
 - `POST /jobs/youtube`
 - `GET /jobs/{job_id}`
+- `GET /jobs/{job_id}/monitor`
 - `POST /jobs/{job_id}/analyze`
+- `POST /jobs/{job_id}/cancel`
 - `GET /jobs/{job_id}/candidates`
 - `GET /jobs/{job_id}/approved-candidates`
 - `GET /jobs/{job_id}/clips`
+- `GET /jobs/health/pipeline`
+- `GET /jobs/dashboard/monitor`
 
 ### Renderizacao
 
@@ -229,5 +259,6 @@ curl -X POST "http://127.0.0.1:8000/jobs/1/render-candidate" \
 
 - as tabelas sao criadas automaticamente ao iniciar a aplicacao;
 - as pastas base de dados sao garantidas no startup;
-- ha alteracoes locais nao commitadas no repositorio, entao revise o estado do git antes de empacotar ou publicar;
-- para producao, vale adicionar migracoes, testes automatizados e tratamento mais robusto para downloads e filas.
+- o painel web foi desenhado para operacao local, com polling parcial e foco em recuperar jobs longos;
+- para videos longos, a analise incremental por chunks reduz o tempo ate o primeiro candidato;
+- para producao, ainda vale adicionar migracoes formais, workers dedicados e uma fila externa mais robusta.

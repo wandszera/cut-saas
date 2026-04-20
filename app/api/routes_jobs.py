@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException
@@ -9,6 +10,7 @@ from app.db.database import get_db
 from app.models.candidate import Candidate
 from app.models.clip import Clip
 from app.models.job import Job
+from app.models.job_step import JobStep
 from app.models.niche_keyword import NicheKeyword
 from app.schemas.job import (
     AnalyzeRequest,
@@ -29,6 +31,7 @@ from app.services.niche_learning import (
     get_learned_keywords_for_niche,
     learn_keywords_for_niche,
 )
+from app.services.analysis_calibration import build_analysis_calibration_profile
 from app.services.niche_registry import (
     approve_niche,
     archive_niche,
@@ -49,6 +52,7 @@ from app.services.pipeline import (
     get_exhausted_steps,
     get_job_steps,
     process_job_pipeline,
+    request_job_cancellation,
     reset_pipeline_state_from_step,
     validate_step_name,
 )
@@ -57,6 +61,7 @@ from app.services.segmentation import build_candidate_windows, load_segments
 from app.services.transcription import transcribe_audio
 from app.services.youtube import download_youtube_media
 from app.utils.media_urls import build_static_url
+from app.utils.timecodes import parse_timecode_to_seconds
 from app.utils.runtime_env import detect_node
 
 
@@ -104,6 +109,11 @@ def _ensure_job_ready_for_render(job: Job) -> None:
         raise HTTPException(status_code=400, detail="Job não possui transcrição")
 
 
+def _ensure_job_ready_for_manual_render(job: Job) -> None:
+    if not job.video_path:
+        raise HTTPException(status_code=400, detail="Job nÃ£o possui vÃ­deo")
+
+
 def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     raw_segments = load_segments(job.transcript_path)
     candidates = build_candidate_windows(raw_segments, mode=mode)
@@ -112,6 +122,7 @@ def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     learned_keywords = get_learned_keywords_for_niche(db, niche)
     feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
     transcript_insights = json.loads(job.transcript_insights) if job.transcript_insights else None
+    calibration_profile = build_analysis_calibration_profile(db, niche=niche, mode=mode)
     return score_candidates(
         candidates,
         mode=mode,
@@ -120,6 +131,7 @@ def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
         learned_keywords=learned_keywords,
         feedback_profile=feedback_profile,
         transcript_insights=transcript_insights,
+        calibration_profile=calibration_profile,
     )
 
 
@@ -133,6 +145,18 @@ def _parse_step_details(raw_details: str | None) -> dict:
     return payload if isinstance(payload, dict) else {"value": payload}
 
 
+def _heartbeat_age_seconds(raw_value: str | None) -> float | None:
+    if not raw_value:
+        return None
+    try:
+        heartbeat_dt = datetime.fromisoformat(str(raw_value))
+    except ValueError:
+        return None
+    if heartbeat_dt.tzinfo is not None:
+        heartbeat_dt = heartbeat_dt.astimezone(UTC).replace(tzinfo=None)
+    return (datetime.utcnow() - heartbeat_dt).total_seconds()
+
+
 def _serialize_step_response(step) -> dict:
     details_payload = _parse_step_details(step.details)
     duration_seconds = details_payload.get("duration_seconds")
@@ -141,6 +165,9 @@ def _serialize_step_response(step) -> dict:
         if isinstance(duration_seconds, (int, float))
         else None
     )
+    heartbeat_at = details_payload.get("heartbeat_at")
+    progress_message = details_payload.get("progress_message")
+    progress_percent = details_payload.get("progress_percent")
     summary_items = []
     reason = details_payload.get("reason")
     if reason:
@@ -152,6 +179,11 @@ def _serialize_step_response(step) -> dict:
         summary_items.append(f"Duração: {duration_label}")
     if details_payload.get("forced") is True:
         summary_items.append("Execução forçada")
+
+    if progress_message and step.status == "running":
+        summary_items.append(f"Atividade: {progress_message}")
+    if heartbeat_at and step.status == "running":
+        summary_items.append(f"Ultima atividade: {heartbeat_at}")
 
     return {
         "id": step.id,
@@ -168,6 +200,9 @@ def _serialize_step_response(step) -> dict:
         "summary_items": summary_items,
         "duration_seconds": duration_seconds,
         "duration_label": duration_label,
+        "progress_message": progress_message,
+        "progress_percent": progress_percent,
+        "heartbeat_at": heartbeat_at,
         "started_at": step.started_at,
         "completed_at": step.completed_at,
     }
@@ -186,6 +221,94 @@ def _serialize_feedback_profile(profile: dict | None) -> dict:
         "positive_means": profile.get("positive_means", {}),
         "negative_means": profile.get("negative_means", {}),
         "hybrid_weight_profile": profile.get("hybrid_weight_profile", {}),
+    }
+
+
+def _build_pipeline_health_payload(db: Session) -> dict:
+    jobs = db.query(Job).all()
+    steps = db.query(JobStep).all()
+
+    queued_jobs = [
+        job for job in jobs
+        if job.status == "pending" and (job.error_message or "").startswith("Aguardando vaga na fila")
+    ]
+    active_jobs = [
+        job for job in jobs
+        if job.status in {"downloading", "extracting_audio", "transcribing", "analyzing", "llm_enrichment", "cancel_requested"}
+    ]
+    failed_jobs = [job for job in jobs if job.status == "failed"]
+    canceled_jobs = [job for job in jobs if job.status == "canceled"]
+
+    duration_by_step: dict[str, list[float]] = {}
+    stale_running_steps = 0
+    for step in steps:
+        payload = _parse_step_details(step.details)
+        duration = payload.get("duration_seconds")
+        if isinstance(duration, (int, float)):
+            duration_by_step.setdefault(step.step_name, []).append(float(duration))
+        age_seconds = _heartbeat_age_seconds(payload.get("heartbeat_at"))
+        if step.status == "running" and age_seconds is not None and age_seconds >= 900:
+            stale_running_steps += 1
+
+    average_step_duration_seconds = {
+        step_name: round(sum(values) / len(values), 3)
+        for step_name, values in duration_by_step.items()
+        if values
+    }
+
+    return {
+        "jobs": {
+            "total": len(jobs),
+            "active": len(active_jobs),
+            "queued": len(queued_jobs),
+            "failed": len(failed_jobs),
+            "canceled": len(canceled_jobs),
+            "done": sum(1 for job in jobs if job.status == "done"),
+        },
+        "steps": {
+            "total": len(steps),
+            "running": sum(1 for step in steps if step.status == "running"),
+            "failed": sum(1 for step in steps if step.status in {"failed", "exhausted"}),
+            "completed": sum(1 for step in steps if step.status == "completed"),
+            "average_duration_seconds": average_step_duration_seconds,
+            "stale_running": stale_running_steps,
+        },
+    }
+
+
+def _build_dashboard_monitor_payload(db: Session) -> dict:
+    jobs = db.query(Job).order_by(Job.created_at.desc()).limit(20).all()
+    queued_jobs = [
+        job for job in jobs
+        if job.status == "pending" and (job.error_message or "").startswith("Aguardando vaga na fila")
+    ]
+    active_jobs = [
+        job for job in jobs
+        if job.status in {"downloading", "extracting_audio", "transcribing", "analyzing", "llm_enrichment", "cancel_requested"}
+    ]
+    health = _build_pipeline_health_payload(db)
+    return {
+        "summary": {
+            "total_jobs": len(jobs),
+            "active_jobs": len(active_jobs),
+            "queued_jobs": len(queued_jobs),
+            "jobs_with_clips": len({clip.job_id for clip in db.query(Clip).filter(Clip.job_id.in_([job.id for job in jobs])).all()}) if jobs else 0,
+            "jobs_ready_to_publish": len({clip.job_id for clip in db.query(Clip).filter(Clip.job_id.in_([job.id for job in jobs]), Clip.publication_status == "ready").all()}) if jobs else 0,
+            "jobs_published": len({clip.job_id for clip in db.query(Clip).filter(Clip.job_id.in_([job.id for job in jobs]), Clip.publication_status == "published").all()}) if jobs else 0,
+            "jobs_with_exports": sum(1 for job in jobs if list_job_export_bundles(job.id)),
+        },
+        "pipeline_health": health,
+        "jobs": [
+            {
+                "id": job.id,
+                "status": job.status,
+                "status_label": job.status_label,
+                "title": job.title,
+                "error_message": job.error_message,
+                "progress": job.progress,
+            }
+            for job in jobs
+        ],
     }
 
 
@@ -452,6 +575,18 @@ def get_render_presets():
     }
 
 
+@router.get("/analysis-calibration")
+def get_analysis_calibration(mode: str = "short", niche: str | None = None, db: Session = Depends(get_db)):
+    normalized_mode = _normalize_mode(mode)
+    normalized_niche = (niche or "").strip().lower() or None
+    calibration_profile = build_analysis_calibration_profile(
+        db,
+        mode=normalized_mode,
+        niche=normalized_niche,
+    )
+    return calibration_profile
+
+
 @router.get("/niches")
 def get_niches(include_inactive: bool = True, db: Session = Depends(get_db)):
     niches = list_niche_definitions(db, include_inactive=include_inactive)
@@ -462,6 +597,16 @@ def get_niches(include_inactive: bool = True, db: Session = Depends(get_db)):
         "inactive_count": sum(1 for niche in niches if niche["status"] in {"archived", "rejected"}),
         "niches": niches,
     }
+
+
+@router.get("/health/pipeline")
+def get_pipeline_health(db: Session = Depends(get_db)):
+    return _build_pipeline_health_payload(db)
+
+
+@router.get("/dashboard/monitor")
+def get_dashboard_monitor(db: Session = Depends(get_db)):
+    return _build_dashboard_monitor_payload(db)
 
 
 @router.post("/niches")
@@ -667,6 +812,21 @@ def retry_job(
     }
 
 
+@router.post("/{job_id}/cancel")
+def cancel_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+    job = _get_job_or_404(db, job_id)
+    request_job_cancellation(db, job)
+    db.refresh(job)
+    return {
+        "message": "Cancelamento solicitado",
+        "job_id": job.id,
+        "status": job.status,
+    }
+
+
 @router.post("/{job_id}/steps/{step_name}/retry")
 def retry_job_step(
     job_id: int,
@@ -731,7 +891,7 @@ def reset_job_step(
 @router.post("/{job_id}/render")
 def render_top_clips(job_id: int, payload: RenderRequest, db: Session = Depends(get_db)):
     job = _get_job_or_404(db, job_id)
-    _ensure_job_ready_for_render(job)
+    _ensure_job_ready_for_manual_render(job)
 
     mode = _normalize_mode(payload.mode)
     ranked = _get_ranked_candidates(db, job, mode=mode)
@@ -860,6 +1020,33 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/{job_id}/monitor")
+def get_job_monitor(job_id: int, db: Session = Depends(get_db)):
+    job = _get_job_or_404(db, job_id)
+    steps = get_job_steps(db, job.id)
+    candidates_count = db.query(Candidate).filter(Candidate.job_id == job.id).count()
+    clips_count = db.query(Clip).filter(Clip.job_id == job.id).count()
+    exports_count = len(list_job_export_bundles(job.id))
+
+    return {
+        "id": job.id,
+        "status": job.status,
+        "error_message": job.error_message,
+        "video_url": build_static_url(job.video_path),
+        "audio_url": build_static_url(job.audio_path),
+        "transcript_url": build_static_url(job.transcript_path),
+        "video_path": job.video_path,
+        "audio_path": job.audio_path,
+        "transcript_path": job.transcript_path,
+        "overview": {
+            "candidates_count": candidates_count,
+            "clips_count": clips_count,
+            "exports_count": exports_count,
+        },
+        "steps": [_serialize_step_response(step) for step in steps],
+    }
+
+
 @router.get("/{job_id}/feedback-profile")
 def get_job_feedback_profile(job_id: int, mode: str = "short", db: Session = Depends(get_db)):
     job = _get_job_or_404(db, job_id)
@@ -968,7 +1155,7 @@ def render_candidate_by_id(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidato não encontrado")
 
-    _ensure_job_ready_for_render(job)
+    _ensure_job_ready_for_manual_render(job)
 
     clip, _subtitles_path, output_path = render_candidate_clip(
         db=db,
@@ -1003,7 +1190,7 @@ def render_candidate_by_id(
 @router.post("/{job_id}/render-candidate")
 def render_candidate(job_id: int, payload: RenderCandidateRequest, db: Session = Depends(get_db)):
     job = _get_job_or_404(db, job_id)
-    _ensure_job_ready_for_render(job)
+    _ensure_job_ready_for_manual_render(job)
 
     mode = _normalize_mode(payload.mode)
     ranked = _get_ranked_candidates(db, job, mode=mode)
@@ -1040,7 +1227,7 @@ def render_candidate(job_id: int, payload: RenderCandidateRequest, db: Session =
         "duration": candidate["duration"],
         "score": candidate.get("score"),
         "reason": candidate.get("reason"),
-        "subtitles_burned": payload.burn_subtitles,
+        "subtitles_burned": bool(subtitles_path),
         "render_preset": payload.render_preset,
         "headline": clip.headline,
         "description": clip.description,
@@ -1221,18 +1408,24 @@ def render_approved_candidates(
 @router.post("/{job_id}/render-manual")
 def render_manual_clip(job_id: int, payload: ManualRenderRequest, db: Session = Depends(get_db)):
     job = _get_job_or_404(db, job_id)
-    _ensure_job_ready_for_render(job)
+    _ensure_job_ready_for_manual_render(job)
 
     mode = _normalize_mode(payload.mode)
-    if payload.end <= payload.start:
+    try:
+        start_seconds = parse_timecode_to_seconds(payload.start)
+        end_seconds = parse_timecode_to_seconds(payload.end)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if end_seconds <= start_seconds:
         raise HTTPException(status_code=400, detail="end deve ser maior que start")
 
-    duration = round(payload.end - payload.start, 2)
+    duration = round(end_seconds - start_seconds, 2)
     clip, subtitles_path, output_path = execute_manual_render(
         db=db,
         job=job,
-        start=payload.start,
-        end=payload.end,
+        start=start_seconds,
+        end=end_seconds,
         mode=mode,
         burn_subtitles=payload.burn_subtitles,
         render_preset=payload.render_preset,
@@ -1248,10 +1441,10 @@ def render_manual_clip(job_id: int, payload: ManualRenderRequest, db: Session = 
         "source": "manual",
         "mode": mode,
         "format": "9:16" if mode == "short" else "16:9",
-        "start": payload.start,
-        "end": payload.end,
+        "start": start_seconds,
+        "end": end_seconds,
         "duration": duration,
-        "subtitles_burned": payload.burn_subtitles,
+        "subtitles_burned": bool(subtitles_path),
         "render_preset": payload.render_preset,
         "headline": clip.headline,
         "description": clip.description,
