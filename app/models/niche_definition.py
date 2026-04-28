@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
 
 from app.db.database import Base
@@ -8,6 +8,7 @@ class NicheDefinition(Base):
     __tablename__ = "niche_definitions"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True, index=True)
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)

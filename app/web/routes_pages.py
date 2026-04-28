@@ -6,15 +6,19 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_workspace, require_current_user, require_current_workspace
 from app.db.database import get_db
 from app.models.candidate import Candidate
 from app.models.clip import Clip
 from app.models.job import Job
 from app.models.job_step import JobStep
+from app.models.user import User
+from app.models.workspace import Workspace
+from app.models.workspace_member import WorkspaceMember
 from app.core.config import settings
+from app.services.access import TRIAL_MAX_VIDEO_MINUTES, ensure_workspace_can_create_job
 from app.services.candidates import get_candidates_for_job, regenerate_candidates_for_job
 from app.services.exports import list_job_export_bundles
 from app.services.niche_learning import (
@@ -35,21 +39,27 @@ from app.services.pipeline import (
     MAX_STEP_ATTEMPTS,
     complete_analysis_without_llm,
     get_job_steps,
-    process_job_pipeline,
     request_job_cancellation,
 )
+from app.services.publication import PUBLICATION_STATUS_LABELS, normalize_publication_status
+from app.services.queue import enqueue_pipeline_job
+from app.services.quota import ensure_workspace_can_start_job, get_workspace_quota_status
 from app.services.render_presets import DEFAULT_PRESET, list_render_presets
 from app.services.render_workflow import render_candidate_clip, render_manual_clip
 from app.services.serializers import serialize_candidate, serialize_clip
 from app.services.system_diagnostics import build_system_diagnostics
 from app.services.scoring import score_candidates
 from app.services.segmentation import build_candidate_windows, load_segments
+from app.services.media import probe_video_duration_seconds
+from app.services.storage import get_storage, normalize_storage_key
+from app.services.youtube import fetch_youtube_metadata
+from app.web.template_utils import build_templates
 from app.utils.media_urls import build_static_url
 from app.utils.timecodes import parse_timecode_to_seconds
 
 
 router = APIRouter(tags=["pages"])
-templates = Jinja2Templates(directory="app/templates")
+templates = build_templates()
 STEP_STALE_HEARTBEAT_SECONDS = 900
 JOB_AUTO_REFRESH_STATUSES = {
     "pending",
@@ -127,6 +137,13 @@ def _get_candidate_or_404(db: Session, candidate_id: int) -> Candidate:
     return candidate
 
 
+def _get_job_for_workspace_or_404(db: Session, job_id: int, workspace: Workspace) -> Job:
+    job = db.query(Job).filter(Job.id == job_id, Job.workspace_id == workspace.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job nÃ£o encontrado")
+    return job
+
+
 def _job_view_url(
     job_id: int,
     *,
@@ -147,13 +164,43 @@ def _job_view_url(
     return f"/jobs/{job_id}/view?{query}" if query else f"/jobs/{job_id}/view"
 
 
+def _dashboard_url(message: str | None = None, level: str = "success") -> str:
+    params: dict[str, str] = {}
+    if message:
+        params["message"] = message
+        params["message_level"] = level
+    query = urlencode(params)
+    return f"/dashboard?{query}" if query else "/dashboard"
+
+
+def _billing_activation_url() -> str:
+    params = urlencode(
+        {
+            "message": (
+                f"Seu workspace pode testar 1 video de ate {TRIAL_MAX_VIDEO_MINUTES} minutos sem cartao. "
+                "Depois disso, cadastre um cartao para continuar."
+            ),
+            "level": "warning",
+        }
+    )
+    return f"/billing?{params}"
+
+
+def _is_billing_activation_message(message: str) -> bool:
+    normalized = (message or "").lower()
+    return any(
+        token in normalized
+        for token in ("cartao", "teste gratis", "30 minutos", "videos maiores")
+    )
+
+
 def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     raw_segments = load_segments(job.transcript_path)
     candidates = build_candidate_windows(raw_segments, mode=mode)
     niche = job.detected_niche or "geral"
-    niche_profile = get_niche_profile(db, niche)
-    learned_keywords = get_learned_keywords_for_niche(db, niche)
-    feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
+    niche_profile = get_niche_profile(db, niche, workspace_id=job.workspace_id)
+    learned_keywords = get_learned_keywords_for_niche(db, niche, workspace_id=job.workspace_id)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, mode, workspace_id=job.workspace_id)
     transcript_insights = json.loads(job.transcript_insights) if job.transcript_insights else None
     calibration_profile = build_analysis_calibration_profile(db, niche=niche, mode=mode)
     return score_candidates(
@@ -709,6 +756,10 @@ def enrich_clips_for_view(clips: list[Clip]) -> list[dict]:
             {
                 **base_payload,
                 "format_label": "9:16" if clip.mode == "short" else "16:9",
+                "publication_status_label": PUBLICATION_STATUS_LABELS.get(
+                    clip.publication_status,
+                    clip.publication_status or "Rascunho",
+                ),
                 "start_mmss": format_seconds_to_mmss(clip.start_time),
                 "end_mmss": format_seconds_to_mmss(clip.end_time),
                 "duration_mmss": format_seconds_to_mmss(clip.duration),
@@ -904,13 +955,38 @@ def enrich_transcript_insights_for_view(raw_insights: str | None) -> dict | None
 
 
 @router.get("/")
-def home(
+def public_home(
+    request: Request,
+    workspace: Workspace | None = Depends(get_current_workspace),
+):
+    if workspace is not None:
+        query_string = request.url.query
+        dashboard_url = "/dashboard"
+        if query_string:
+            dashboard_url = f"{dashboard_url}?{query_string}"
+        return RedirectResponse(url=dashboard_url, status_code=303)
+    return templates.TemplateResponse(request, "index.html", {})
+
+
+@router.get("/dashboard")
+def dashboard(
     request: Request,
     status_filter: str = "all",
     search_query: str = "",
+    message: str | None = None,
+    message_level: str = "success",
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    recent_jobs = db.query(Job).order_by(Job.created_at.desc()).limit(20).all()
+    recent_jobs = (
+        db.query(Job)
+        .filter(Job.workspace_id == workspace.id)
+        .order_by(Job.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    if not recent_jobs and not message:
+        return RedirectResponse(url="/onboarding", status_code=303)
     recent_jobs = enrich_jobs_with_progress(db, recent_jobs)
     filtered_jobs = filter_jobs_for_view(recent_jobs, status_filter)
     filtered_jobs = search_jobs_for_view(filtered_jobs, search_query)
@@ -918,10 +994,11 @@ def home(
     pipeline_health = build_pipeline_health_summary(db, recent_jobs)
     priority_groups = build_job_priority_groups(db, filtered_jobs)
     publication_board = build_publication_board(db, recent_jobs)
+    quota_status = get_workspace_quota_status(db, workspace.id)
 
     return templates.TemplateResponse(
         request,
-        "index.html",
+        "dashboard.html",
         {
             "recent_jobs": filtered_jobs,
             "status_filter": status_filter,
@@ -930,8 +1007,38 @@ def home(
             "pipeline_health": pipeline_health,
             "priority_groups": priority_groups,
             "publication_board": publication_board,
+            "quota_status": quota_status,
+            "flash": {"message": message, "level": message_level} if message else None,
             "now": datetime.now(),
             "auto_refresh": has_active_jobs(filtered_jobs),
+        },
+    )
+
+
+@router.get("/onboarding")
+def onboarding(
+    request: Request,
+    message: str | None = None,
+    message_level: str = "success",
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    first_job = (
+        db.query(Job)
+        .filter(Job.workspace_id == workspace.id)
+        .order_by(Job.created_at.asc())
+        .first()
+    )
+    if first_job:
+        return RedirectResponse(url=_job_view_url(first_job.id), status_code=303)
+
+    quota_status = get_workspace_quota_status(db, workspace.id)
+    return templates.TemplateResponse(
+        request,
+        "onboarding.html",
+        {
+            "quota_status": quota_status,
+            "flash": {"message": message, "level": message_level} if message else None,
         },
     )
 
@@ -942,8 +1049,9 @@ def niche_admin_page(
     message: str | None = None,
     level: str | None = None,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    niches = list_niche_definitions(db, include_inactive=True)
+    niches = list_niche_definitions(db, include_inactive=True, workspace_id=workspace.id)
     active_niches = [niche for niche in niches if niche["status"] == "active"]
     pending_niches = [niche for niche in niches if niche["status"] == "pending"]
     inactive_niches = [niche for niche in niches if niche["status"] in {"archived", "rejected"}]
@@ -977,12 +1085,14 @@ def suggest_niche_from_page(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
     try:
         create_pending_niche(
             db,
             name=name,
             description=description.strip() or None,
+            workspace_id=workspace.id,
         )
     except ValueError as exc:
         return _niche_redirect(str(exc), "warning")
@@ -996,27 +1106,39 @@ def suggest_niche_from_page(
 
 
 @router.post("/nichos/{slug}/aprovar")
-def approve_niche_from_page(slug: str, db: Session = Depends(get_db)):
+def approve_niche_from_page(
+    slug: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
-        approve_niche(db, slug)
+        approve_niche(db, slug, workspace_id=workspace.id)
     except ValueError as exc:
         return _niche_redirect(str(exc), "warning")
     return _niche_redirect("Nicho aprovado e ativado no motor heurístico.", "success")
 
 
 @router.post("/nichos/{slug}/rejeitar")
-def reject_niche_from_page(slug: str, db: Session = Depends(get_db)):
+def reject_niche_from_page(
+    slug: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
-        reject_niche(db, slug)
+        reject_niche(db, slug, workspace_id=workspace.id)
     except ValueError as exc:
         return _niche_redirect(str(exc), "warning")
     return _niche_redirect("Sugestão de nicho rejeitada.", "success")
 
 
 @router.post("/nichos/{slug}/excluir")
-def archive_niche_from_page(slug: str, db: Session = Depends(get_db)):
+def archive_niche_from_page(
+    slug: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
-        archive_niche(db, slug)
+        archive_niche(db, slug, workspace_id=workspace.id)
     except ValueError as exc:
         return _niche_redirect(str(exc), "warning")
     return _niche_redirect("Nicho removido da lista ativa.", "success")
@@ -1027,8 +1149,29 @@ def create_job_from_form(
     background_tasks: BackgroundTasks,
     url: str = Form(...),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
+    try:
+        metadata = fetch_youtube_metadata(url)
+        ensure_workspace_can_start_job(db, workspace.id)
+        ensure_workspace_can_create_job(
+            db,
+            workspace.id,
+            duration_seconds=float(metadata.get("duration_seconds") or 0.0),
+        )
+    except HTTPException as exc:
+        target_url = "/billing" if _is_billing_activation_message(str(exc.detail)) else "/onboarding"
+        return RedirectResponse(
+            url=f"{target_url}?{urlencode({'message': str(exc.detail), 'level': 'warning'})}",
+            status_code=303,
+        )
+    except RuntimeError as exc:
+        return RedirectResponse(
+            url=f"/onboarding?{urlencode({'message': str(exc), 'level': 'error'})}",
+            status_code=303,
+        )
     job = Job(
+        workspace_id=workspace.id,
         source_type="youtube",
         source_value=url,
         status="pending",
@@ -1037,7 +1180,7 @@ def create_job_from_form(
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(process_job_pipeline, job.id)
+    enqueue_pipeline_job(background_tasks, job.id)
 
     return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
@@ -1048,6 +1191,7 @@ def create_local_job_from_form(
     video_file: UploadFile = File(...),
     title: str = Form(""),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
     if not video_file.filename:
         raise HTTPException(status_code=400, detail="Arquivo de video nao informado")
@@ -1057,15 +1201,35 @@ def create_local_job_from_form(
     if suffix not in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}:
         raise HTTPException(status_code=400, detail="Formato de video nao suportado")
 
-    uploads_dir = Path(settings.base_data_dir) / "uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    stored_path = uploads_dir / f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{original_name}"
+    stored_path = get_storage().path_for(
+        normalize_storage_key("uploads", f"{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}_{original_name}")
+    )
 
     with stored_path.open("wb") as buffer:
         shutil.copyfileobj(video_file.file, buffer)
 
+    try:
+        ensure_workspace_can_start_job(db, workspace.id)
+        ensure_workspace_can_create_job(
+            db,
+            workspace.id,
+            duration_seconds=probe_video_duration_seconds(stored_path),
+        )
+    except HTTPException as exc:
+        target_url = "/billing" if _is_billing_activation_message(str(exc.detail)) else "/onboarding"
+        return RedirectResponse(
+            url=f"{target_url}?{urlencode({'message': str(exc.detail), 'level': 'warning'})}",
+            status_code=303,
+        )
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        return RedirectResponse(
+            url=f"/onboarding?{urlencode({'message': str(exc), 'level': 'error'})}",
+            status_code=303,
+        )
+
     resolved_title = title.strip() or Path(original_name).stem
     job = Job(
+        workspace_id=workspace.id,
         source_type="local",
         source_value=str(stored_path),
         status="pending",
@@ -1076,7 +1240,7 @@ def create_local_job_from_form(
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(process_job_pipeline, job.id)
+    enqueue_pipeline_job(background_tasks, job.id)
 
     video_file.file.close()
 
@@ -1089,8 +1253,9 @@ def retry_job_from_page(
     force: str | None = Form(None),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1099,7 +1264,7 @@ def retry_job_from_page(
     job.error_message = None
     db.commit()
 
-    background_tasks.add_task(process_job_pipeline, job.id, force_bool)
+    enqueue_pipeline_job(background_tasks, job.id, force=force_bool)
     return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
 
@@ -1110,8 +1275,9 @@ def retry_job_step_from_page(
     force: str | None = Form(None),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1120,7 +1286,7 @@ def retry_job_step_from_page(
 
     normalized_step = validate_step_name(step_name)
     reset_pipeline_state_from_step(db, job, normalized_step, reset_attempts=False)
-    background_tasks.add_task(process_job_pipeline, job.id, force_bool, normalized_step)
+    enqueue_pipeline_job(background_tasks, job.id, force=force_bool, start_step=normalized_step)
 
     return RedirectResponse(url=_job_view_url(job.id), status_code=303)
 
@@ -1130,8 +1296,9 @@ def reset_job_step_from_page(
     job_id: int,
     step_name: str,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1148,10 +1315,9 @@ def recalibrate_feedback_from_page(
     job_id: int,
     mode: str = Form("short"),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job nÃ£o encontrado")
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
 
     normalized_mode = _normalize_mode(mode)
     learn_keywords_for_niche(db, niche=(job.detected_niche or "geral").lower().strip())
@@ -1167,8 +1333,9 @@ def analyze_without_llm_from_page(
     job_id: int,
     mode: str = Form("short"),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job nÃ£o encontrado")
     if not job.video_path or not job.transcript_path:
@@ -1193,8 +1360,9 @@ def cancel_job_from_page(
     mode: str = Form("short"),
     render_preset: str = Form(DEFAULT_PRESET),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1225,8 +1393,9 @@ def job_detail(
     clip_filter: str = "all",
     export_filter: str = "all",
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = db.query(Job).filter(Job.id == job_id, Job.workspace_id == workspace.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1237,13 +1406,13 @@ def job_detail(
     transcript_insights = enrich_transcript_insights_for_view(job.transcript_insights)
     candidates_total_count = 0
     if job.transcript_path and job.status in {"analyzing", "llm_enrichment", "done"}:
-        feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", normalized_mode)
+        feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", normalized_mode, workspace_id=job.workspace_id)
         saved_candidates = _get_candidates_for_job_view(db, job, normalized_mode)
         candidates_total_count = len(saved_candidates)
         candidates_missing = not bool(saved_candidates)
         if saved_candidates:
             candidates = enrich_candidates_for_view(
-                [serialize_candidate(candidate) for candidate in saved_candidates[:10]],
+                [serialize_candidate(candidate) for candidate in saved_candidates],
                 mode=normalized_mode,
                 feedback_profile=feedback_profile,
             )
@@ -1314,6 +1483,52 @@ def job_detail(
     )
 
 
+@router.get("/account")
+def account_profile_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    membership = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == current_user.id,
+            WorkspaceMember.status == "active",
+        )
+        .first()
+    )
+    jobs_count = db.query(Job).filter(Job.workspace_id == workspace.id).count()
+    rendered_clips_count = (
+        db.query(Clip)
+        .join(Job, Clip.job_id == Job.id)
+        .filter(Job.workspace_id == workspace.id)
+        .count()
+    )
+    approved_candidates_count = (
+        db.query(Candidate)
+        .join(Job, Candidate.job_id == Job.id)
+        .filter(Job.workspace_id == workspace.id, Candidate.status == "approved")
+        .count()
+    )
+    quota_status = get_workspace_quota_status(db, workspace.id)
+
+    return templates.TemplateResponse(
+        request,
+        "account.html",
+        {
+            "user": current_user,
+            "workspace": workspace,
+            "membership": membership,
+            "jobs_count": jobs_count,
+            "rendered_clips_count": rendered_clips_count,
+            "approved_candidates_count": approved_candidates_count,
+            "quota_status": quota_status,
+        },
+    )
+
+
 @router.post("/jobs/{job_id}/view/render-candidate")
 def render_candidate_from_page(
     job_id: int,
@@ -1322,8 +1537,9 @@ def render_candidate_from_page(
     render_preset: str = Form(DEFAULT_PRESET),
     burn_subtitles: str | None = Form(None),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
     if not job.video_path:
@@ -1365,8 +1581,9 @@ def update_candidate_status_from_page(
     mode: str = Form("short"),
     status: str = Form(...),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1394,8 +1611,9 @@ def toggle_candidate_favorite_from_page(
     candidate_id: int,
     mode: str = Form("short"),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1419,8 +1637,9 @@ def update_candidate_notes_from_page(
     mode: str = Form("short"),
     editorial_notes: str = Form(""),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1446,10 +1665,9 @@ def bulk_update_candidates_from_page(
     render_preset: str = Form(DEFAULT_PRESET),
     burn_subtitles: str | None = Form(None),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job nÃ£o encontrado")
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
 
     normalized_mode = _normalize_mode(mode)
     normalized_action = (bulk_action or "").strip().lower()
@@ -1492,9 +1710,10 @@ def bulk_update_candidates_from_page(
         )
 
     if normalized_action == "render":
-        if not job.video_path or not job.transcript_path:
+        if not job.video_path:
             raise HTTPException(status_code=400, detail="Job incompleto")
-        burn_subtitles_bool = burn_subtitles is not None
+        subtitles_requested = burn_subtitles is not None
+        burn_subtitles_bool = subtitles_requested and bool(job.transcript_path)
         for candidate in sorted(candidates, key=lambda row: (not bool(row.is_favorite), -(row.score or 0), row.created_at)):
             render_candidate_clip(
                 db=db,
@@ -1504,8 +1723,13 @@ def bulk_update_candidates_from_page(
                 render_preset=render_preset,
             )
         db.commit()
+        flash_message = "Selecao renderizada com sucesso."
+        flash_level = "success"
+        if subtitles_requested and not job.transcript_path:
+            flash_message = "Selecao renderizada sem legenda embutida porque este job ainda nao possui transcricao."
+            flash_level = "warning"
         return RedirectResponse(
-            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message="Selecao renderizada com sucesso."),
+            url=_job_view_url(job.id, mode=normalized_mode, render_preset=render_preset, message=flash_message, level=flash_level),
             status_code=303,
         )
 
@@ -1523,8 +1747,9 @@ def update_clip_publication_status_from_page(
     render_preset: str = Form(DEFAULT_PRESET),
     status: str = Form(...),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
@@ -1532,10 +1757,10 @@ def update_clip_publication_status_from_page(
     if not clip:
         raise HTTPException(status_code=404, detail="Clip não encontrado")
 
-    normalized_status = (status or "").strip().lower()
-    allowed_statuses = {"draft", "ready", "published", "discarded"}
-    if normalized_status not in allowed_statuses:
-        raise HTTPException(status_code=400, detail="Status de publicação inválido")
+    try:
+        normalized_status = normalize_publication_status(status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     clip.publication_status = normalized_status
     db.commit()
@@ -1558,15 +1783,17 @@ def render_approved_from_page(
     render_preset: str = Form(DEFAULT_PRESET),
     burn_subtitles: str | None = Form(None),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
     if not job.video_path:
         raise HTTPException(status_code=400, detail="Job incompleto")
 
     normalized_mode = _normalize_mode(mode)
-    burn_subtitles_bool = burn_subtitles is not None
+    subtitles_requested = burn_subtitles is not None
+    burn_subtitles_bool = subtitles_requested and bool(job.transcript_path)
     approved_candidates = (
         db.query(Candidate)
         .filter(
@@ -1589,12 +1816,19 @@ def render_approved_from_page(
 
     db.commit()
 
+    flash_message = "Render concluido com sucesso."
+    flash_level = "success"
+    if subtitles_requested and not job.transcript_path:
+        flash_message = "Render concluido sem legenda embutida porque este job ainda nao possui transcricao."
+        flash_level = "warning"
+
     return RedirectResponse(
         url=_job_view_url(
             job.id,
             mode=normalized_mode,
             render_preset=render_preset,
-            message="Render concluido com sucesso.",
+            message=flash_message,
+            level=flash_level,
         ),
         status_code=303,
     )
@@ -1615,8 +1849,9 @@ def render_manual_from_page(
     render_preset: str = Form(DEFAULT_PRESET),
     burn_subtitles: str | None = Form(None),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = _get_job_for_workspace_or_404(db, job_id, workspace)
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
     if not job.video_path:

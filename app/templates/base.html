@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Cut SaaS{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/styles/base.css" />
+  <style>
+    .app-frame {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .app-shell-sidebar {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      padding: 22px 18px;
+    }
+
+    .app-shell-sidebar-panel {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 16px;
+      padding: 20px 18px;
+      border: 1px solid rgba(198, 255, 0, 0.16);
+      background: rgba(10, 10, 10, 0.9);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.34);
+    }
+
+    .app-shell-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      padding: 18px 24px 0 0;
+    }
+
+    .app-shell-bar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px;
+      border: 1px solid rgba(198, 255, 0, 0.18);
+      border-radius: 0;
+      background: rgba(10, 10, 10, 0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.34);
+    }
+
+    .app-shell-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--snow);
+      text-decoration: none;
+      font-family: var(--font-display);
+      font-size: 2rem;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .app-shell-brand::before {
+      content: "CF";
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      min-height: 42px;
+      padding: 0 8px;
+      color: var(--acid);
+      border: 1px solid rgba(198, 255, 0, 0.28);
+      background: rgba(198, 255, 0, 0.08);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+    }
+
+    .app-shell-brand-block {
+      display: grid;
+      gap: 12px;
+    }
+
+    .app-shell-brand-copy {
+      display: grid;
+      gap: 6px;
+    }
+
+    .app-shell-brand-copy span,
+    .app-shell-nav-label {
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .app-shell-brand-copy p {
+      color: var(--snow);
+      font-size: 0.92rem;
+      line-height: 1.5;
+      max-width: 24ch;
+    }
+
+    .app-shell-nav {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .app-shell-nav-link {
+      display: grid;
+      gap: 4px;
+      min-height: 62px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--snow);
+      text-decoration: none;
+      transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .app-shell-nav-link strong {
+      font-family: var(--font-display);
+      font-size: 1.45rem;
+      line-height: 0.95;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .app-shell-nav-link span {
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.56rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .app-shell-nav-link:hover,
+    .app-shell-nav-link.is-active {
+      transform: translate(-2px, -2px);
+      border-color: rgba(198, 255, 0, 0.32);
+      background: rgba(198, 255, 0, 0.08);
+      color: var(--snow);
+      text-decoration: none;
+    }
+
+    .app-shell-status {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .app-shell-status strong {
+      font-family: var(--font-display);
+      font-size: 1.6rem;
+      line-height: 0.95;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .app-shell-status p {
+      color: var(--ghost);
+      font-size: 0.86rem;
+      line-height: 1.45;
+    }
+
+    .app-shell-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .app-shell-pill,
+    .app-shell-link,
+    .app-shell-logout {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 0;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--snow);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-decoration: none;
+    }
+
+    .app-shell-pill strong {
+      margin-left: 6px;
+      letter-spacing: 0;
+      text-transform: none;
+      font-size: 12px;
+      color: var(--acid);
+    }
+
+    .app-shell-link:hover,
+    .app-shell-logout:hover,
+    .app-shell-brand:hover {
+      text-decoration: none;
+      color: var(--snow);
+    }
+
+    .app-shell-link:hover,
+    .app-shell-logout:hover {
+      border-color: rgba(198, 255, 0, 0.4);
+      background: rgba(198, 255, 0, 0.12);
+      color: var(--acid);
+      transform: translate(-1px, -1px);
+    }
+
+    .app-shell-logout {
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .app-shell-main {
+      min-width: 0;
+      padding-bottom: 28px;
+    }
+
+    @media (max-width: 860px) {
+      .app-frame {
+        grid-template-columns: 1fr;
+      }
+
+      .app-shell-sidebar {
+        position: static;
+        height: auto;
+        padding: 14px 16px 0;
+      }
+
+      .app-shell-sidebar-panel {
+        height: auto;
+      }
+
+      .app-shell-header {
+        padding: 14px 16px 0;
+      }
+
+      .app-shell-bar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .app-shell-meta {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% set rendered_content %}{% block content %}{% endblock %}{% endset %}
+  {% if app_current_user %}
+  <div class="app-frame">
+    <aside class="app-shell-sidebar">
+      <div class="app-shell-sidebar-panel">
+        <div class="app-shell-brand-block">
+          <a class="app-shell-brand" href="/dashboard">Cut SaaS</a>
+          <div class="app-shell-brand-copy">
+            <span>Workspace ativo</span>
+            <p>{% if app_current_workspace %}{{ app_current_workspace.name }}{% else %}Operacao principal{% endif %}</p>
+          </div>
+        </div>
+
+        <nav class="app-shell-nav" aria-label="Navegacao principal">
+          <div class="app-shell-nav-label">Control center</div>
+          <a class="app-shell-nav-link{% if request.url.path in ['/', '/dashboard', '/onboarding'] %} is-active{% endif %}" href="/dashboard">
+            <span>Pipeline e execucao</span>
+            <strong>Dashboard</strong>
+          </a>
+          <a class="app-shell-nav-link{% if request.url.path.startswith('/account') %} is-active{% endif %}" href="/account">
+            <span>Identidade e acesso</span>
+            <strong>Conta</strong>
+          </a>
+          <a class="app-shell-nav-link{% if request.url.path.startswith('/billing') %} is-active{% endif %}" href="/billing">
+            <span>Plano e capacidade</span>
+            <strong>Billing</strong>
+          </a>
+          <a class="app-shell-nav-link{% if request.url.path.startswith('/nichos') %} is-active{% endif %}" href="/nichos">
+            <span>Editoriais e setups</span>
+            <strong>Nichos</strong>
+          </a>
+          <a class="app-shell-nav-link{% if request.url.path.startswith('/system') %} is-active{% endif %}" href="/system">
+            <span>Saude operacional</span>
+            <strong>Sistema</strong>
+          </a>
+        </nav>
+
+        <div class="app-shell-status">
+          <span class="app-shell-nav-label">Agora</span>
+          <strong>{{ app_current_user.display_name or app_current_user.email }}</strong>
+          <p>{% if app_current_membership %}{{ app_current_membership.role|title }} no workspace atual. {% endif %}Acompanhe fila, billing e revisao sem trocar de contexto.</p>
+        </div>
+
+        <form action="/logout" method="post" style="margin: 0;">
+          <button class="app-shell-logout" type="submit">Sair</button>
+        </form>
+      </div>
+    </aside>
+
+    <div class="app-shell-main">
+      <header class="app-shell-header">
+        <div class="app-shell-bar">
+          <div class="app-shell-meta">
+            {% if app_current_workspace %}
+            <a class="app-shell-pill" href="/account">Workspace <strong>{{ app_current_workspace.name }}</strong></a>
+            {% endif %}
+            <a class="app-shell-pill" href="/account">Conta <strong>{{ app_current_user.display_name or app_current_user.email }}</strong></a>
+            {% if app_current_membership %}
+            <span class="app-shell-pill">Papel <strong>{{ app_current_membership.role }}</strong></span>
+            {% endif %}
+          </div>
+          <div class="app-shell-meta">
+            <a class="app-shell-link" href="/account">Perfil</a>
+            <a class="app-shell-link" href="/billing">Billing</a>
+          </div>
+        </div>
+      </header>
+      {{ rendered_content | safe }}
+    </div>
+  </div>
+  {% else %}
+  {{ rendered_content | safe }}
+  {% endif %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

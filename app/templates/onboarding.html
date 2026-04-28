@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Primeiro job - Cut SaaS{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="/assets/styles/pages/dashboard.css" />
+{% endblock %}
+
+{% block content %}
+  <main class="shell onboarding-shell">
+    {% if flash %}
+      <section class="dashboard-alert dashboard-alert-{{ flash.level }}">
+        {{ flash.message }}
+      </section>
+    {% endif %}
+
+    <section class="hero onboarding-hero">
+      <div class="hero-panel">
+        <div class="eyebrow">Primeiro processamento</div>
+        <h1 class="hero-title">
+          Coloque o primeiro ativo na esteira e veja o produto entrar em ritmo por voce.
+          <span>Assim que o job nasce, a plataforma abre uma tela de acompanhamento com progresso, sinais editoriais e proximas acoes claras.</span>
+        </h1>
+        <p class="hero-copy">
+          O fluxo passa por preparo do video, transcricao, analise de cortes e geracao de candidatos. Quando os primeiros trechos aparecerem, a tela do job mostra o que revisar, renderizar ou exportar sem te deixar perdido no caminho.
+        </p>
+        <div class="hero-actions">
+          <a class="hero-link" href="#youtube">Usar link do YouTube</a>
+          <a class="ghost-link" href="#upload">Enviar arquivo</a>
+        </div>
+        <div class="hero-metrics">
+          <div class="metric">
+            <strong>{{ quota_status.plan.name }}</strong>
+            <span>Plano atual</span>
+          </div>
+          <div class="metric">
+            <strong>{{ "%.0f"|format(quota_status.limit_video_minutes) }}</strong>
+            <span>minutos mensais</span>
+          </div>
+          <div class="metric">
+            <strong>{{ "%.1f"|format(quota_status.remaining_video_minutes) }}</strong>
+            <span>minutos restantes</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-side">
+        <section class="surface">
+          <h3>O que acontece depois</h3>
+          <div class="onboarding-steps">
+            <div><strong>Recebido</strong><span>O job entra no pipeline com fila, status e monitoramento.</span></div>
+            <div><strong>Preparado</strong><span>Video, audio e transcricao viram base para leitura editorial.</span></div>
+            <div><strong>Selecionado</strong><span>Os primeiros trechos fortes comecam a aparecer para revisao.</span></div>
+            <div><strong>Pronto</strong><span>Clips, legenda e pacote editorial ficam prontos para seguir.</span></div>
+          </div>
+        </section>
+
+        <section class="surface hero-stage-card">
+          <h3>Como isso vai aparecer</h3>
+          <div class="hero-stage-toolbar">
+            <div class="hero-stage-pill">Queue live</div>
+            <div class="hero-stage-pill">First job</div>
+            <div class="hero-stage-pill">Workspace new</div>
+          </div>
+          <div class="hero-stage-board">
+            <div class="hero-stage-row is-done">
+              <div class="hero-stage-dot"></div>
+              <div>Download e preparo</div>
+              <div>100%</div>
+            </div>
+            <div class="hero-stage-bar" style="--progress: 100%;"></div>
+            <div class="hero-stage-row is-live">
+              <div class="hero-stage-dot"></div>
+              <div>Analise editorial</div>
+              <div>72%</div>
+            </div>
+            <div class="hero-stage-bar" style="--progress: 72%;"></div>
+          </div>
+          <div class="hero-stage-kpis">
+            <div class="hero-stage-kpi">
+              <strong>03</strong>
+              <span>candidatos</span>
+            </div>
+            <div class="hero-stage-kpi">
+              <strong>01</strong>
+              <span>aprovado</span>
+            </div>
+            <div class="hero-stage-kpi">
+              <strong>00:42</strong>
+              <span>gancho forte</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="form-shell">
+      <div class="surface" id="youtube">
+        <div class="section-title">
+          <div>
+            <h2>Link do YouTube</h2>
+            <p>Use um video publico ou uma origem autorizada para iniciar seu primeiro fluxo completo.</p>
+          </div>
+        </div>
+        <form method="post" action="/web/jobs/create" class="field-grid">
+          <div>
+            <label for="url">URL do video</label>
+            <input id="url" type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required />
+          </div>
+          <button type="submit">Criar primeiro job</button>
+        </form>
+      </div>
+
+      <div class="surface" id="upload">
+        <div class="section-title">
+          <div>
+            <h2>Upload local</h2>
+            <p>Envie um arquivo e acompanhe a analise em uma tela desenhada para operacao editorial real.</p>
+          </div>
+        </div>
+        <form method="post" action="/web/jobs/create-local" enctype="multipart/form-data" class="field-grid">
+          <div>
+            <label for="video_file">Arquivo de video</label>
+            <input id="video_file" type="file" name="video_file" accept="video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v" required />
+          </div>
+          <div>
+            <label for="title">Titulo opcional</label>
+            <input id="title" type="text" name="title" placeholder="Nome interno para o job" />
+          </div>
+          <button class="secondary-button" type="submit">Enviar e criar job</button>
+        </form>
+      </div>
+    </section>
+  </main>
+{% endblock %}

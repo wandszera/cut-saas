@@ -1,27 +1,22 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nichos - Cut SaaS</title>
+{% extends "base.html" %}
+
+{% block title %}Nichos - Cut SaaS{% endblock %}
+
+{% block head %}
   <style>
     :root {
-      --bg: #07111a;
-      --panel: rgba(12, 22, 34, 0.82);
-      --line: rgba(157, 197, 224, 0.14);
-      --line-strong: rgba(157, 197, 224, 0.24);
-      --text: #eef5fb;
-      --muted: #90a7bb;
-      --accent: #73f0c2;
-      --accent-2: #67b8ff;
-      --accent-3: #ffd37b;
-      --danger: #ff9b9d;
-      --radius-xl: 32px;
-      --radius-lg: 24px;
-      --radius-md: 18px;
-      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
-      --font-body: "Manrope", "Segoe UI", sans-serif;
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+      --bg: #0a0a0a;
+      --panel: rgba(17, 17, 17, 0.9);
+      --panel-soft: rgba(255, 255, 255, 0.03);
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(198, 255, 0, 0.22);
+      --text: var(--snow);
+      --muted: var(--ghost);
+      --accent: var(--acid);
+      --accent-2: var(--fire);
+      --warn: #ffe27a;
+      --danger: #ff8d73;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
     }
 
     * { box-sizing: border-box; }
@@ -32,11 +27,10 @@
       color: var(--text);
       font-family: var(--font-body);
       background:
-        radial-gradient(circle at top left, rgba(103, 184, 255, 0.14), transparent 28%),
-        radial-gradient(circle at top right, rgba(255, 211, 123, 0.12), transparent 22%),
-        radial-gradient(circle at bottom right, rgba(115, 240, 194, 0.12), transparent 28%),
-        linear-gradient(180deg, #07121b 0%, #081018 100%);
-      padding: 26px;
+        radial-gradient(circle at top left, rgba(255, 59, 0, 0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(198, 255, 0, 0.08), transparent 28%),
+        linear-gradient(180deg, #090909 0%, #0f0f0f 100%);
+      padding: 24px;
     }
 
     .shell {
@@ -46,7 +40,7 @@
 
     .hero {
       display: grid;
-      grid-template-columns: 1.2fr 0.8fr;
+      grid-template-columns: 1.18fr 0.82fr;
       gap: 18px;
       margin-bottom: 18px;
     }
@@ -57,94 +51,160 @@
       box-shadow: var(--shadow);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
-      border-radius: var(--radius-xl);
       padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(198, 255, 0, 0.52), rgba(255, 255, 255, 0));
+      pointer-events: none;
     }
 
     .eyebrow {
       display: inline-flex;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--accent-3);
-      font-size: 12px;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
-      letter-spacing: 0.16em;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: currentColor;
     }
 
     h1, h2, h3 {
+      margin: 0;
       font-family: var(--font-display);
-      letter-spacing: -0.04em;
+      line-height: 0.92;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     h1 {
       margin: 18px 0 12px;
-      font-size: clamp(38px, 5vw, 68px);
-      line-height: 0.94;
-      max-width: 760px;
+      font-size: clamp(3.4rem, 6vw, 6rem);
+      max-width: 11ch;
     }
 
     .subtitle {
       margin: 0;
-      max-width: 720px;
-      color: #c0d0de;
-      font-size: 16px;
+      max-width: 54ch;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.7;
     }
 
-    .nav-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 48px;
-      padding: 0 18px;
-      border-radius: 999px;
-      text-decoration: none;
-      color: var(--text);
-      font-weight: 700;
-      border: 1px solid var(--line-strong);
-      background: rgba(255, 255, 255, 0.05);
-    }
-
-    .summary-grid {
+    .summary-grid,
+    .signal-grid,
+    .ops-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
     }
 
-    .summary-box {
+    .summary-grid,
+    .signal-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .ops-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .summary-grid {
+      margin-top: 16px;
+    }
+
+    .signal-grid {
+      margin-top: 18px;
+    }
+
+    .summary-box,
+    .signal-box,
+    .ops-box,
+    .niche-card {
+      background: var(--panel-soft);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .summary-box,
+    .signal-box,
+    .ops-box {
       padding: 18px;
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .summary-box strong {
       display: block;
-      font-size: 34px;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      font-family: var(--font-display);
+      font-size: 2.4rem;
+      line-height: 0.9;
     }
 
-    .summary-box span {
+    .summary-box span,
+    .signal-box p,
+    .ops-box p,
+    .muted,
+    .section-head p,
+    .empty {
       color: var(--muted);
-      font-size: 13px;
+    }
+
+    .summary-box span,
+    .signal-box strong,
+    .ops-box strong,
+    label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .signal-box strong,
+    .ops-box strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .signal-box p,
+    .ops-box p {
+      margin: 0;
+      font-size: 0.92rem;
+      line-height: 1.55;
     }
 
     .flash {
       margin-bottom: 18px;
       padding: 14px 16px;
-      border-radius: 18px;
       border: 1px solid transparent;
-      font-size: 14px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
-    .flash-success { background: rgba(115, 240, 194, 0.1); border-color: rgba(115, 240, 194, 0.18); color: #d2f8e9; }
-    .flash-warning { background: rgba(255, 211, 123, 0.1); border-color: rgba(255, 211, 123, 0.18); color: #ffe6b4; }
-    .flash-error { background: rgba(255, 155, 157, 0.1); border-color: rgba(255, 155, 157, 0.18); color: #ffd3d4; }
+    .flash-success { background: rgba(198, 255, 0, 0.08); border-color: rgba(198, 255, 0, 0.2); color: #dff7b7; }
+    .flash-warning { background: rgba(255, 226, 122, 0.1); border-color: rgba(255, 226, 122, 0.2); color: #fff0bf; }
+    .flash-error { background: rgba(255, 59, 0, 0.1); border-color: rgba(255, 59, 0, 0.2); color: #ffd6c9; }
 
     .grid {
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-columns: 1.08fr 0.92fr;
       gap: 18px;
       align-items: start;
     }
@@ -164,14 +224,14 @@
     }
 
     .section-head h2 {
-      margin: 0;
-      font-size: 28px;
+      font-size: 2.2rem;
     }
 
     .section-head p {
       margin: 0;
-      color: var(--muted);
-      max-width: 520px;
+      max-width: 52ch;
+      font-size: 0.96rem;
+      line-height: 1.6;
     }
 
     .niche-list {
@@ -181,9 +241,18 @@
 
     .niche-card {
       padding: 20px;
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .niche-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .niche-head {
@@ -197,12 +266,7 @@
 
     .niche-name {
       margin: 0;
-      font-size: 22px;
-    }
-
-    .muted {
-      color: var(--muted);
-      font-size: 14px;
+      font-size: 1.8rem;
     }
 
     .badge-row,
@@ -219,38 +283,40 @@
       align-items: center;
       min-height: 34px;
       padding: 0 12px;
-      border-radius: 999px;
-      font-size: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
       font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
     }
 
     .badge {
       background: rgba(255, 255, 255, 0.06);
-      color: #e8f2fb;
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .badge-active {
-      background: rgba(115, 240, 194, 0.12);
-      color: #d4f9ea;
-      border-color: rgba(115, 240, 194, 0.16);
+      background: rgba(198, 255, 0, 0.1);
+      color: var(--accent);
+      border-color: rgba(198, 255, 0, 0.16);
     }
 
     .badge-pending {
-      background: rgba(255, 211, 123, 0.12);
-      color: #ffe5b0;
-      border-color: rgba(255, 211, 123, 0.16);
+      background: rgba(255, 226, 122, 0.12);
+      color: #fff0bf;
+      border-color: rgba(255, 226, 122, 0.2);
     }
 
     .badge-archived {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.04);
       color: var(--muted);
     }
 
     .keyword {
-      background: rgba(103, 184, 255, 0.11);
-      color: #d8ebff;
-      border: 1px solid rgba(103, 184, 255, 0.14);
+      background: rgba(255, 59, 0, 0.08);
+      color: #ffd9cd;
+      border: 1px solid rgba(255, 59, 0, 0.14);
     }
 
     form {
@@ -264,9 +330,7 @@
     label {
       display: block;
       margin-bottom: 8px;
-      font-size: 13px;
-      color: #bfd0de;
-      font-weight: 700;
+      color: var(--muted);
     }
 
     input,
@@ -274,9 +338,8 @@
     button {
       width: 100%;
       font: inherit;
-      border-radius: 16px;
       border: 1px solid var(--line-strong);
-      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
     }
 
     input,
@@ -294,7 +357,7 @@
     input:focus,
     textarea:focus {
       outline: none;
-      border-color: rgba(115, 240, 194, 0.45);
+      border-color: rgba(198, 255, 0, 0.42);
       background: rgba(255, 255, 255, 0.06);
     }
 
@@ -302,35 +365,46 @@
       min-height: 48px;
       padding: 0 16px;
       cursor: pointer;
-      font-weight: 800;
-      color: #041018;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-      box-shadow: 0 14px 28px rgba(103, 184, 255, 0.16);
+      color: var(--void);
+      background: var(--accent);
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    }
+
+    button:hover {
+      transform: translate(-2px, -2px);
+      background: var(--snow);
     }
 
     .ghost {
       background: rgba(255, 255, 255, 0.05);
       color: var(--text);
-      box-shadow: none;
     }
 
     .danger {
-      background: rgba(255, 155, 157, 0.14);
-      color: #ffd4d6;
-      box-shadow: none;
+      background: rgba(255, 59, 0, 0.12);
+      color: #ffd7cc;
     }
 
     .empty {
       padding: 22px;
-      border-radius: 22px;
-      color: var(--muted);
       border: 1px dashed rgba(255, 255, 255, 0.14);
       background: rgba(255, 255, 255, 0.02);
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
-    @media (max-width: 1024px) {
+    @media (max-width: 1120px) {
       .hero,
-      .grid {
+      .grid,
+      .summary-grid,
+      .signal-grid,
+      .ops-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -340,37 +414,51 @@
         padding: 16px;
       }
 
-      .panel {
+      .panel,
+      .niche-card {
         padding: 18px;
       }
 
       h1 {
-        font-size: 42px;
-      }
-
-      .summary-grid {
-        grid-template-columns: 1fr;
+        font-size: 3.3rem;
       }
     }
   </style>
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
   <div class="shell">
     <section class="hero">
       <div class="panel">
         <div class="eyebrow">Curadoria de Nichos</div>
-        <h1>Construa um catálogo de nichos com linguagem de produto, não de planilha.</h1>
+        <h1>Construa um catalogo editorial que deixa o motor mais inteligente e o produto mais valioso.</h1>
         <p class="subtitle">
-          A interface foi redesenhada para deixar mais claro o que está ativo, o que está pendente e o que precisa de decisão humana antes de entrar no motor heurístico.
+          Aqui a operacao define em quais territorios a IA deve reconhecer contexto, sinais de retencao e oportunidades de corte. Nao e cadastro solto: e estrategia de produto.
         </p>
+        <div class="signal-grid">
+          <div class="signal-box">
+            <strong>Mais precisao</strong>
+            <p>Nichos ativos ajudam o motor a entender vocabulario, formato e expectativa editorial com menos ruido.</p>
+          </div>
+          <div class="signal-box">
+            <strong>Curadoria humana</strong>
+            <p>Sugestoes pendentes ficam em revisao antes de alterar o comportamento automatico do produto.</p>
+          </div>
+          <div class="signal-box">
+            <strong>Expansao segura</strong>
+            <p>Um catalogo bem cuidado facilita testar novas frentes sem perder consistencia de cortes e scoring.</p>
+          </div>
+        </div>
       </div>
+
       <div class="panel">
         <div class="section-head" style="margin-bottom: 12px;">
           <div>
             <h2>Panorama</h2>
-            <p>Um resumo rápido do estado do seu catálogo editorial.</p>
+            <p>Leitura rapida do estado atual do seu catalogo editorial e do quanto ele ja alimenta a operacao.</p>
           </div>
-          <a class="nav-link" href="/">Voltar ao dashboard</a>
+          {% set active_page = "nichos" %}
+          {% include "partials/global_actions.html" %}
         </div>
         <div class="summary-grid">
           <div class="summary-box">
@@ -379,11 +467,21 @@
           </div>
           <div class="summary-box">
             <strong>{{ pending_niches|length }}</strong>
-            <span>sugestões pendentes</span>
+            <span>sugestoes pendentes</span>
           </div>
           <div class="summary-box">
             <strong>{{ inactive_niches|length }}</strong>
-            <span>itens arquivados ou rejeitados</span>
+            <span>arquivados ou rejeitados</span>
+          </div>
+        </div>
+        <div class="ops-grid" style="margin-top: 12px;">
+          <div class="ops-box">
+            <strong>Motor editorial</strong>
+            <p>O que esta ativo ja influencia deteccao automatica, contexto e scoring.</p>
+          </div>
+          <div class="ops-box">
+            <strong>Governanca</strong>
+            <p>Pendencias e historico mantem a evolucao do catalogo rastreavel e controlada.</p>
           </div>
         </div>
       </div>
@@ -399,7 +497,7 @@
           <div class="section-head">
             <div>
               <h2>Nichos ativos</h2>
-              <p>Tudo o que está aqui já participa da detecção automática e influencia o score do motor heurístico.</p>
+              <p>Tudo o que esta aqui ja participa da deteccao automatica e influencia o score do motor heuristico.</p>
             </div>
           </div>
 
@@ -417,7 +515,7 @@
                       </div>
                     </div>
                   </div>
-                  <p class="muted">{{ niche.description or "Sem descrição." }}</p>
+                  <p class="muted">{{ niche.description or "Sem descricao." }}</p>
                   <div class="keywords" style="margin-top: 14px;">
                     {% for keyword in niche.keywords %}
                       <span class="keyword">{{ keyword }}</span>
@@ -441,8 +539,8 @@
         <section class="panel">
           <div class="section-head">
             <div>
-              <h2>Sugestões pendentes</h2>
-              <p>A LLM sugere; a curadoria humana decide se o nicho entra ou não no motor.</p>
+              <h2>Sugestoes pendentes</h2>
+              <p>A LLM sugere; a curadoria humana decide se o nicho entra ou nao no motor.</p>
             </div>
           </div>
 
@@ -459,9 +557,9 @@
                       </div>
                     </div>
                   </div>
-                  <p class="muted">{{ niche.description or "Sem descrição sugerida." }}</p>
+                  <p class="muted">{{ niche.description or "Sem descricao sugerida." }}</p>
                   {% if niche.llm_notes %}
-                    <p class="muted" style="margin-top: 10px;">Justificativa da LLM: {{ niche.llm_notes }}</p>
+                    <p class="muted" style="margin-top: 10px;">Leitura da LLM: {{ niche.llm_notes }}</p>
                   {% endif %}
                   <div class="keywords" style="margin-top: 14px;">
                     {% for keyword in niche.keywords %}
@@ -473,14 +571,14 @@
                       <button type="submit">Aprovar nicho</button>
                     </form>
                     <form class="inline" method="post" action="/nichos/{{ niche.slug }}/rejeitar">
-                      <button class="ghost" type="submit">Não aprovar</button>
+                      <button class="ghost" type="submit">Nao aprovar</button>
                     </form>
                   </div>
                 </article>
               {% endfor %}
             </div>
           {% else %}
-            <div class="empty">Nenhuma sugestão pendente no momento.</div>
+            <div class="empty">Nenhuma sugestao pendente no momento.</div>
           {% endif %}
         </section>
       </div>
@@ -490,8 +588,13 @@
           <div class="section-head">
             <div>
               <h2>Criar novo nicho</h2>
-              <p>Descreva o território editorial e deixe a LLM devolver uma proposta com descrição e palavras-chave.</p>
+              <p>Descreva o territorio editorial e deixe a LLM devolver uma proposta com descricao, palavras-chave e framing inicial.</p>
             </div>
+          </div>
+
+          <div class="signal-box" style="margin-bottom: 14px;">
+            <strong>Quando vale criar um nicho novo</strong>
+            <p>Use esta area quando a operacao entra em um territorio com linguagem, promessa ou audiencia bem diferente do que o motor ja conhece.</p>
           </div>
 
           <form method="post" action="/nichos/sugerir" style="display: grid; gap: 14px;">
@@ -502,17 +605,17 @@
 
             <div>
               <label for="description">Contexto opcional</label>
-              <textarea id="description" name="description" placeholder="Ex.: vídeos com dicas de vendas, fluxo de caixa, atendimento e crescimento de pequenos negócios."></textarea>
+              <textarea id="description" name="description" placeholder="Ex.: videos com dicas de vendas, fluxo de caixa, atendimento e crescimento de pequenos negocios."></textarea>
             </div>
 
-            <button type="submit">Gerar sugestão com LLM</button>
+            <button type="submit">Gerar sugestao com LLM</button>
           </form>
         </section>
 
         <section class="panel">
           <div class="section-head">
             <div>
-              <h2>Histórico</h2>
+              <h2>Historico</h2>
               <p>Registro de nichos arquivados ou rejeitados para manter rastreabilidade editorial.</p>
             </div>
           </div>
@@ -530,7 +633,7 @@
                       </div>
                     </div>
                   </div>
-                  <p class="muted">{{ niche.description or "Sem descrição." }}</p>
+                  <p class="muted">{{ niche.description or "Sem descricao." }}</p>
                 </article>
               {% endfor %}
             </div>
@@ -541,5 +644,4 @@
       </div>
     </div>
   </div>
-</body>
-</html>
+{% endblock %}

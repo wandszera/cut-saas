@@ -1,28 +1,26 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+{% extends "base.html" %}
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Job {{ job.id }} - Cut SaaS</title>
+{% block title %}Job {{ job.id }} - Cut SaaS{% endblock %}
+
+{% block head %}
   <style>
     :root {
-      --panel: rgba(12, 22, 34, 0.82);
+      --panel: rgba(17, 17, 17, 0.9);
       --panel-soft: rgba(255, 255, 255, 0.03);
-      --line: rgba(157, 197, 224, 0.14);
-      --line-strong: rgba(157, 197, 224, 0.24);
-      --text: #eef5fb;
-      --muted: #8ea6ba;
-      --accent: #73f0c2;
-      --accent-2: #67b8ff;
-      --success: #95f2c8;
-      --danger: #ff9b9d;
-      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
-      --font-body: "Manrope", "Segoe UI", sans-serif;
-      --radius-xl: 30px;
-      --radius-lg: 24px;
-      --radius-md: 18px;
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(198, 255, 0, 0.22);
+      --text: var(--snow);
+      --muted: var(--ghost);
+      --accent: var(--acid);
+      --accent-2: var(--fire);
+      --success: #b7ff6b;
+      --danger: #ff8d73;
+      --font-display: var(--font-display);
+      --font-body: var(--font-body);
+      --radius-xl: 0;
+      --radius-lg: 0;
+      --radius-md: 0;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
     }
 
     * {
@@ -34,10 +32,9 @@
       margin: 0;
       padding: 24px;
       background:
-        radial-gradient(circle at top left, rgba(103, 184, 255, 0.14), transparent 26%),
-        radial-gradient(circle at top right, rgba(255, 211, 123, 0.12), transparent 20%),
-        radial-gradient(circle at bottom right, rgba(115, 240, 194, 0.11), transparent 28%),
-        linear-gradient(180deg, #07121b 0%, #081018 100%);
+        radial-gradient(circle at top left, rgba(255, 59, 0, 0.12), transparent 22%),
+        radial-gradient(circle at top right, rgba(198, 255, 0, 0.08), transparent 26%),
+        linear-gradient(180deg, #090909 0%, #0f0f0f 100%);
       color: var(--text);
       line-height: 1.6;
     }
@@ -63,6 +60,37 @@
       flex-wrap: wrap;
     }
 
+    .header-copy {
+      display: grid;
+      gap: 10px;
+      max-width: 760px;
+    }
+
+    .header-kicker {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      width: fit-content;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
     .back-btn {
       display: inline-flex;
       align-items: center;
@@ -73,10 +101,13 @@
       background: rgba(255, 255, 255, 0.05);
       color: var(--text);
       text-decoration: none;
-      border-radius: 999px;
+      border-radius: 0;
       border: 1px solid var(--line-strong);
-      font-size: 13px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
       font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       transition: all 0.2s ease;
     }
 
@@ -85,12 +116,97 @@
       border-color: rgba(115, 240, 194, 0.35);
     }
 
+    .section-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 0 0 18px;
+      position: sticky;
+      top: 92px;
+      z-index: 18;
+      padding: 12px;
+      background: rgba(10, 10, 10, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+
+    .section-nav a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-decoration: none;
+    }
+
+    .section-nav a:hover {
+      color: var(--text);
+      border-color: rgba(115, 240, 194, 0.28);
+      background: rgba(115, 240, 194, 0.08);
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+
+    .ops-rail {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0 0 18px;
+    }
+
+    .ops-rail-card {
+      min-height: 88px;
+      padding: 16px 18px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 6px;
+      align-content: start;
+    }
+
+    .ops-rail-card strong {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      line-height: 0.94;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .ops-rail-card span {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .ops-rail-card p {
+      margin: 0;
+      color: var(--text);
+      font-size: 0.84rem;
+      line-height: 1.4;
+    }
+
     h1 {
       margin: 0;
       font-family: var(--font-display);
-      font-size: clamp(30px, 4vw, 54px);
+      font-size: clamp(3.4rem, 6vw, 5.8rem);
       color: var(--text);
-      letter-spacing: -0.05em;
+      letter-spacing: 0.05em;
     }
 
     .card {
@@ -140,9 +256,16 @@
       margin-top: 18px;
     }
 
+    .hero-meta-compact {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
     .hero-panel {
       padding: 18px;
-      border-radius: 22px;
+      border-radius: 0;
       background: rgba(255, 255, 255, 0.035);
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
@@ -162,6 +285,13 @@
       word-break: break-word;
     }
 
+    .hero-panel small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
     .overview-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -169,9 +299,33 @@
       margin: 0 0 24px;
     }
 
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.28fr) minmax(300px, 0.72fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .content-main,
+    .content-side {
+      display: grid;
+      gap: 24px;
+    }
+
+    .content-main {
+      order: 1;
+    }
+
+    .content-side {
+      order: 2;
+      justify-self: stretch;
+      position: sticky;
+      top: 150px;
+    }
+
     .overview-card {
       padding: 18px;
-      border-radius: 22px;
+      border-radius: 0;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.07);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -201,7 +355,7 @@
       gap: 12px;
       padding: 16px 18px;
       margin: 0 0 18px;
-      border-radius: 20px;
+      border-radius: 0;
       border: 1px solid rgba(255, 255, 255, 0.08);
       background: rgba(255, 255, 255, 0.04);
       box-shadow: var(--shadow);
@@ -317,7 +471,7 @@
 
     input, select, button {
       padding: 12px 14px;
-      border-radius: 16px;
+      border-radius: 0;
       border: 1px solid var(--line-strong);
       font-size: 14px;
       transition: all 0.2s ease;
@@ -354,11 +508,16 @@
 
     button {
       cursor: pointer;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      background: var(--accent);
       color: #031018;
-      font-weight: 800;
-      border: none;
-      box-shadow: 0 14px 24px rgba(103, 184, 255, 0.16);
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border: 1px solid var(--accent);
+      box-shadow: none;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
     }
 
     button:hover {
@@ -385,9 +544,12 @@
     .status-badge {
       display: inline-block;
       padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
+      border-radius: 0;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       white-space: nowrap;
     }
 
@@ -530,6 +692,49 @@
       width: 100%;
     }
 
+    .compact-card {
+      padding: 18px 20px;
+    }
+
+    .compact-card h2 {
+      margin-bottom: 10px;
+      font-size: 2rem;
+    }
+
+    .compact-card > p {
+      margin: 4px 0 10px;
+      font-size: 0.9rem;
+    }
+
+    .compact-card .meta-grid {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .compact-card .meta-item {
+      padding: 10px;
+    }
+
+    .compact-card .snippet {
+      margin-top: 10px;
+    }
+
+    .compact-toolbar {
+      padding: 14px;
+      border-radius: 18px;
+    }
+
+    .compact-toolbar .form-group > div,
+    .compact-toolbar.form-group > div {
+      min-width: 132px;
+      flex: 1 1 132px;
+    }
+
+    .compact-toolbar button {
+      min-height: 48px;
+    }
+
     .form-group label {
       font-size: 13px;
       color: #aaa;
@@ -576,6 +781,32 @@
       margin-bottom: 12px;
     }
 
+    .candidate-top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 12px;
+      align-items: center;
+    }
+
+    .candidate-top-actions form,
+    .candidate-top-actions > button {
+      margin: 0;
+    }
+
+    .candidate-top-actions form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .candidate-top-actions button,
+    .candidate-top-actions .ghost-button {
+      min-height: 38px;
+      padding: 9px 12px;
+      font-size: 0.78rem;
+    }
+
     .candidate-select {
       display: inline-flex;
       align-items: center;
@@ -620,7 +851,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin: 12px 0;
+      margin: 10px 0 12px;
     }
 
     .badge {
@@ -788,6 +1019,49 @@
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .candidate-details {
+      margin-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+      padding-top: 12px;
+    }
+
+    .candidate-details summary {
+      cursor: pointer;
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .candidate-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .candidate-details summary::before {
+      content: "+";
+      color: var(--accent);
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+
+    .candidate-details[open] summary::before {
+      content: "-";
+    }
+
+    .candidate-details-body {
+      display: grid;
+      gap: 0;
+      margin-top: 10px;
     }
 
     .candidate-actions form {
@@ -898,6 +1172,116 @@
       background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025));
     }
 
+    .side-card {
+      padding: 18px 20px;
+    }
+
+    .side-card h2 {
+      margin-bottom: 10px;
+      font-size: 2rem;
+    }
+
+    .side-card p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .side-card .step-actions {
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .side-card .step-item {
+      padding: 12px 14px;
+      border-radius: 12px;
+    }
+
+    .side-card .step-header {
+      gap: 10px;
+    }
+
+    .side-card .step-name {
+      font-size: 0.96rem;
+    }
+
+    .side-card .step-meta {
+      font-size: 0.7rem;
+    }
+
+    .side-card .summary-chip {
+      padding: 6px 10px;
+      font-size: 0.66rem;
+    }
+
+    .clip-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .clip-title {
+      display: grid;
+      gap: 6px;
+    }
+
+    .clip-title-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .clip-title-line strong {
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .clip-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.77rem;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .clip-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-size: 0.78rem;
+    }
+
+    .clip-actions {
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 12px 0 14px;
+    }
+
+    .clip-actions .form-group {
+      margin: 0;
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .clip-actions .form-group button {
+      width: auto;
+      min-width: 200px;
+    }
+
     .export-item {
       background: rgba(255, 255, 255, 0.035);
       padding: 16px 18px;
@@ -916,9 +1300,32 @@
     }
 
     .clip-info {
-      font-size: 12px;
-      color: #888;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
       margin-top: 8px;
+    }
+
+    .clip-info-clean {
+      margin: 0 0 12px;
+    }
+
+    .clip > p:first-of-type,
+    .clip > .clip-info:not(.clip-info-clean) {
+      display: none;
+    }
+
+    .clip > .form-group {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .clip > .form-group button {
+      width: auto;
+      min-width: 210px;
     }
 
     .step-list {
@@ -928,8 +1335,8 @@
 
     .step-item {
       background: rgba(255, 255, 255, 0.035);
-      padding: 18px;
-      border-radius: 18px;
+      padding: 14px 16px;
+      border-radius: 14px;
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
@@ -942,23 +1349,39 @@
     }
 
     .step-name {
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 700;
       color: #fff;
-      text-transform: capitalize;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .step-meta {
-      font-size: 12px;
+      font-size: 11px;
       color: #888;
       margin-top: 4px;
+    }
+
+    .step-running {
+      margin-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .step-running-copy {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: #aaa;
     }
 
     .step-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-top: 12px;
+      margin-top: 10px;
     }
 
     .step-actions form {
@@ -975,6 +1398,8 @@
       font-size: 12px;
       color: #aaa;
       word-break: break-word;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 10px;
     }
 
     .step-summary {
@@ -993,7 +1418,7 @@
       display: grid;
       gap: 8px;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      margin-top: 12px;
+      margin-top: 10px;
     }
 
     .step-timeline .meta-item {
@@ -1010,6 +1435,10 @@
     }
 
     @media (max-width: 768px) {
+      .section-nav {
+        top: 76px;
+      }
+
       body {
         padding: 16px;
       }
@@ -1029,8 +1458,15 @@
       }
 
       .hero-meta,
-      .overview-grid {
+      .overview-grid,
+      .hero-meta-compact,
+      .ops-rail,
+      .content-grid {
         grid-template-columns: 1fr;
+      }
+
+      .content-side {
+        position: static;
       }
 
       .form-group {
@@ -1067,9 +1503,9 @@
       }
     }
   </style>
-</head>
+{% endblock %}
 
-<body>
+{% block content %}
   <div class="page">
   {% if flash %}
   <div id="flash-banner" data-level="{{ flash.level }}" class="flash-banner {% if flash.level == 'error' %}flash-error{% elif flash.level == 'warning' %}flash-warning{% else %}flash-success{% endif %}">
@@ -1077,16 +1513,58 @@
       <strong>{% if flash.level == "error" %}Erro{% elif flash.level == "warning" %}Aviso{% else %}Sucesso{% endif %}</strong>
       <span>{{ flash.message }}</span>
     </div>
-    <button type="button" class="flash-close" aria-label="Fechar aviso" onclick="dismissFlashBanner()">×</button>
+    <button type="button" class="flash-close" aria-label="Fechar aviso" onclick="dismissFlashBanner()">x</button>
   </div>
   {% endif %}
   <div class="header">
-    <a href="/" class="back-btn">< Voltar</a>
-    <div>
+    <div class="header-copy">
+      <span class="header-kicker">Workspace editorial</span>
       <h1>Job #{{ job.id }}</h1>
-      <p style="margin: 10px 0 0 0; color: var(--muted); max-width: 720px;">Painel editorial, pipeline tecnico e renderizacao no mesmo espaco de trabalho.</p>
+      <p style="margin: 0; color: var(--muted);">Painel editorial, pipeline tecnico e renderizacao no mesmo espaco de trabalho.</p>
+    </div>
+    <div class="header-actions">
+      <a href="/" class="back-btn">Voltar ao dashboard</a>
+      <a href="#pipeline-card" class="back-btn">Pipeline</a>
+      <a href="#editorial-queue-card" class="back-btn">Fila editorial</a>
+      <a href="#clips-card" class="back-btn">Clips</a>
     </div>
   </div>
+
+  <nav class="section-nav" aria-label="Navegacao interna do job">
+    <a href="#pipeline-card">Pipeline</a>
+    <a href="#manual-render-card">Render manual</a>
+    <a href="#editorial-queue-card">Revisao</a>
+    <a href="#clips-card">Clips</a>
+    <a href="#exports-card">Exports</a>
+  </nav>
+
+  <section class="ops-rail" aria-label="Resumo operacional do job">
+    <div class="ops-rail-card">
+      <span>Status</span>
+      <strong>{{ job.status_label }}</strong>
+      <p>{% if queue_waiting %}Aguardando capacidade do motor sem sinal de falha.{% else %}Fluxo disponivel para acompanhar, revisar ou exportar.{% endif %}</p>
+    </div>
+    <div class="ops-rail-card">
+      <span>Candidatos</span>
+      <strong>{{ candidates_total_count }}</strong>
+      <p>Momentos detectados para triagem editorial.</p>
+    </div>
+    <div class="ops-rail-card">
+      <span>Clips</span>
+      <strong>{{ clips|length }}</strong>
+      <p>Saidas ja renderizadas ou prontas para publicacao.</p>
+    </div>
+    <div class="ops-rail-card">
+      <span>Exports</span>
+      <strong>{{ exports|length }}</strong>
+      <p>Arquivos finais disponiveis para download.</p>
+    </div>
+    <div class="ops-rail-card">
+      <span>Modo em foco</span>
+      <strong>{{ mode }}</strong>
+      <p>Filtro atual aplicado na leitura desta pagina.</p>
+    </div>
+  </section>
 
   <div class="card hero-card">
     <div class="section-intro">
@@ -1107,32 +1585,49 @@
             <p>{{ job.source_value }}</p>
           </div>
         </div>
+        <div class="hero-meta-compact">
+          <div class="hero-panel">
+            <strong>Modo atual</strong>
+            <p>{{ mode }}</p>
+            <small>Filtro editorial em foco na pagina.</small>
+          </div>
+          <div class="hero-panel">
+            <strong>Preset ativo</strong>
+            <p>{{ render_preset }}</p>
+            <small>Base para renderizacao rapida e consistente.</small>
+          </div>
+          <div class="hero-panel">
+            <strong>Estado de fila</strong>
+            <p>{% if queue_waiting %}Aguardando slot{% else %}Em andamento ou pronto{% endif %}</p>
+            <small>{% if queue_waiting %}O job esta saudavel e so espera capacidade de processamento.{% else %}O job ja pode ser acompanhado, revisado ou renderizado.{% endif %}</small>
+          </div>
+        </div>
       </div>
       <div style="text-align: right;">
         <p style="margin: 0;"><strong>Status:</strong></p>
         <div id="job-status-badge">
         {% if job.status == "done" %}
-          <span class="status-badge status-done">✓ Concluído</span>
+          <span class="status-badge status-done">Concluido</span>
         {% elif job.status == "failed" %}
-          <span class="status-badge status-failed">✗ Erro</span>
+          <span class="status-badge status-failed">Erro</span>
         {% elif job.status == "pending" %}
-          <span class="status-badge status-pending">⏱️ Na fila</span>
+          <span class="status-badge status-pending">Na fila</span>
         {% elif job.status == "downloading" %}
-          <span class="status-badge status-downloading">⬇️ Baixando...</span>
+          <span class="status-badge status-downloading">Baixando...</span>
         {% elif job.status == "extracting_audio" %}
-          <span class="status-badge status-extracting_audio">🔊 Extraindo áudio...</span>
+          <span class="status-badge status-extracting_audio">Extraindo audio...</span>
         {% elif job.status == "transcribing" %}
-          <span class="status-badge status-transcribing">✍️ Transcrevendo...</span>
+          <span class="status-badge status-transcribing">Transcrevendo...</span>
         {% elif job.status == "analyzing" %}
-          <span class="status-badge status-analyzing">🔍 Analisando...</span>
+          <span class="status-badge status-analyzing">Analisando...</span>
         {% elif job.status == "llm_enrichment" %}
-          <span class="status-badge status-analyzing">🧠 Enriquecendo LLM...</span>
+          <span class="status-badge status-analyzing">Enriquecendo LLM...</span>
         {% elif job.status == "rendering" %}
-          <span class="status-badge status-rendering">🎬 Renderizando...</span>
+          <span class="status-badge status-rendering">Renderizando...</span>
         {% elif job.status == "cancel_requested" %}
-          <span class="status-badge status-canceling">⏹️ Cancelando...</span>
+          <span class="status-badge status-canceling">Cancelando...</span>
         {% elif job.status == "canceled" %}
-          <span class="status-badge status-failed">⛔ Cancelado</span>
+          <span class="status-badge status-failed">Cancelado</span>
         {% else %}
           <span class="status-badge">{{ job.status }}</span>
         {% endif %}
@@ -1142,7 +1637,7 @@
 
     {% if job.error_message %}
     <div class="error-box" id="job-error-box">
-      ⚠️ <strong>Erro:</strong> {{ job.error_message }}
+      <strong>Erro:</strong> {{ job.error_message }}
     </div>
     {% endif %}
 
@@ -1155,21 +1650,21 @@
     <div class="meta-grid">
       {% if job.video_path %}
       <div class="meta-item" id="video-asset-card">
-        <strong>🎥 Vídeo original</strong>
+        <strong>Video original</strong>
         <a id="video-asset-link" href="{{ build_static_url(job.video_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
 
       {% if job.audio_path %}
       <div class="meta-item" id="audio-asset-card">
-        <strong>🔊 Áudio extraído</strong>
+        <strong>Audio extraido</strong>
         <a id="audio-asset-link" href="{{ build_static_url(job.audio_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
 
       {% if job.transcript_path %}
       <div class="meta-item" id="transcript-asset-card">
-        <strong>📄 Transcrição</strong>
+        <strong>Transcricao</strong>
         <a id="transcript-asset-link" href="{{ build_static_url(job.transcript_path) }}" target="_blank">Abrir arquivo</a>
       </div>
       {% endif %}
@@ -1177,10 +1672,10 @@
 
     {% if job.video_path %}
     <div class="video-preview" id="original-video-card">
-      <h3>▶ Preview do vídeo original</h3>
+      <h3>Preview do video original</h3>
       <video id="original-video-player" controls preload="metadata">
         <source src="{{ build_static_url(job.video_path) }}" type="video/mp4">
-        Seu navegador não suporta vídeo.
+        Seu navegador nao suporta video.
       </video>
     </div>
     {% endif %}
@@ -1205,11 +1700,14 @@
     </div>
   </div>
 
+  <div class="content-grid">
+    <aside class="content-side">
+
 
 
   {% if job.status == "failed" %}
-  <div class="card">
-    <h2>❌ Falha no processamento</h2>
+  <div class="card side-card">
+    <h2>Falha no processamento</h2>
     {% if job.error_message %}
     <div class="error-box">
       {{ job.error_message }}
@@ -1218,7 +1716,7 @@
   </div>
   {% endif %}
 
-  <div class="card" id="pipeline-card">
+  <div class="card side-card" id="pipeline-card">
     <h2>Pipeline</h2>
     <div id="pipeline-content">
     {% if steps %}
@@ -1249,12 +1747,6 @@
           </div>
         </div>
 
-        {% if step.error_message %}
-        <div class="error-box">
-          <strong>Erro:</strong> {{ step.error_message }}
-        </div>
-        {% endif %}
-
         {% if step.summary_items %}
         <div class="step-summary">
           {% for item in step.summary_items %}
@@ -1264,19 +1756,25 @@
         {% endif %}
 
         {% if step.status == "running" and (step.progress_message or step.heartbeat_at) %}
-        <div class="snippet" style="margin-top: 10px;">
+        <div class="step-running">
           {% if step.progress_percent is not none %}
-          <div class="progress-bar" style="margin: 0 0 10px 0;">
+          <div class="progress-bar">
             <div class="progress-fill" style="width: {{ step.progress_percent }}%;"></div>
           </div>
-          <strong>Progresso:</strong> {{ step.progress_percent }}%<br>
           {% endif %}
-          {% if step.progress_message %}
-          <strong>Atividade atual:</strong> {{ step.progress_message }}<br>
-          {% endif %}
-          {% if step.heartbeat_at %}
-          <strong>Ultima atividade:</strong> {{ step.heartbeat_at }}
-          {% endif %}
+          <div class="step-running-copy">
+            <span>{% if step.progress_message %}{{ step.progress_message }}{% else %}Etapa em execucao{% endif %}</span>
+            <span>
+              {% if step.progress_percent is not none %}{{ step.progress_percent }}%{% endif %}
+              {% if step.heartbeat_at %}{% if step.progress_percent is not none %} | {% endif %}{{ step.heartbeat_at }}{% endif %}
+            </span>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if step.error_message %}
+        <div class="error-box">
+          <strong>Erro:</strong> {{ step.error_message }}
         </div>
         {% endif %}
 
@@ -1309,19 +1807,19 @@
         </div>
         {% endif %}
 
-        {% if step.detail_items %}
-        <div class="step-details">
-          <strong>Contexto da etapa:</strong>
-          {% for item in step.detail_items %}
-          <p style="margin: 6px 0 0 0;">
-            <strong>{{ item.label }}:</strong> {{ item.value }}
-          </p>
-          {% endfor %}
-        </div>
-        {% elif step.details %}
-        <div class="step-details">
-          <strong>Detalhes brutos:</strong> <code>{{ step.details }}</code>
-        </div>
+        {% if step.detail_items or step.details %}
+        <details class="step-details">
+          <summary>Ver contexto</summary>
+          {% if step.detail_items %}
+            {% for item in step.detail_items %}
+            <p style="margin: 6px 0 0 0;">
+              <strong>{{ item.label }}:</strong> {{ item.value }}
+            </p>
+            {% endfor %}
+          {% elif step.details %}
+            <p style="margin: 6px 0 0 0;"><code>{{ step.details }}</code></p>
+          {% endif %}
+        </details>
         {% endif %}
 
         <div class="step-actions">
@@ -1363,7 +1861,7 @@
   </div>
 
   {% if job.status == "failed" or job.status == "pending" %}
-  <div class="card">
+  <div class="card side-card">
     <h2>Recuperacao</h2>
     <div class="step-actions">
       <form method="post" action="/jobs/{{ job.id }}/view/retry">
@@ -1383,6 +1881,9 @@
   </div>
   {% endif %}
 
+    </aside>
+    <div class="content-main">
+
   {% if job.video_path and not job.transcript_path %}
   <div class="card" id="manual-render-direct-card">
     <h2>Render manual imediato</h2>
@@ -1396,7 +1897,7 @@
 
   {% if job.video_path %}
   {% if feedback_profile %}
-  <div class="card">
+  <div class="card compact-card">
     <h2>Aprendizado</h2>
     {% if feedback_profile.is_ready %}
     <div class="meta-grid">
@@ -1409,15 +1910,15 @@
         <span>{{ feedback_profile.niche }} / {{ feedback_profile.mode }}</span>
       </div>
       <div class="meta-item">
-        <strong>Vocabulário recorrente</strong>
+        <strong>Vocabulario recorrente</strong>
         <span>{{ feedback_profile.successful_keywords_preview|join(", ") if feedback_profile.successful_keywords_preview else "Sem destaque ainda" }}</span>
       </div>
       <div class="meta-item">
-        <strong>Peso híbrido atual</strong>
-        <span>Heurístico {{ feedback_profile.hybrid_weight_profile.heuristic_weight }} | LLM {{ feedback_profile.hybrid_weight_profile.llm_weight }}</span>
+        <strong>Peso hibrido atual</strong>
+        <span>Heuristico {{ feedback_profile.hybrid_weight_profile.heuristic_weight }} | LLM {{ feedback_profile.hybrid_weight_profile.llm_weight }}</span>
       </div>
       <div class="meta-item">
-        <strong>Divergências revisadas</strong>
+        <strong>Divergencias revisadas</strong>
         <span>{{ feedback_profile.hybrid_weight_profile.reviewed_count }} casos ({{ feedback_profile.hybrid_weight_profile.approved_count }} aprovados / {{ feedback_profile.hybrid_weight_profile.rejected_count }} rejeitados)</span>
       </div>
     </div>
@@ -1425,30 +1926,30 @@
       {{ feedback_profile.hybrid_weight_profile.summary }}
     </div>
     {% else %}
-    <p style="color: #888;">Ainda não há feedback suficiente para recalibrar o ranking deste nicho.</p>
+    <p style="color: #888;">Ainda nao ha feedback suficiente para recalibrar o ranking deste nicho.</p>
     {% endif %}
   </div>
   {% endif %}
 
   {% if transcript_insights %}
-  <div class="card">
-    <h2>Contexto da Transcrição</h2>
+  <div class="card compact-card">
+    <h2>Contexto da Transcricao</h2>
     <div class="meta-grid">
       <div class="meta-item">
-        <strong>Tópicos principais</strong>
-        <span>{{ transcript_insights.main_topics|join(", ") if transcript_insights.main_topics else "Sem tópicos detectados" }}</span>
+        <strong>Topicos principais</strong>
+        <span>{{ transcript_insights.main_topics|join(", ") if transcript_insights.main_topics else "Sem topicos detectados" }}</span>
       </div>
       <div class="meta-item">
-        <strong>Ângulos virais</strong>
-        <span>{{ transcript_insights.viral_angles|join(", ") if transcript_insights.viral_angles else "Sem ângulos sugeridos" }}</span>
+        <strong>Angulos virais</strong>
+        <span>{{ transcript_insights.viral_angles|join(", ") if transcript_insights.viral_angles else "Sem angulos sugeridos" }}</span>
       </div>
       <div class="meta-item">
-        <strong>Palavras prioritárias</strong>
-        <span>{{ transcript_insights.priority_keywords|join(", ") if transcript_insights.priority_keywords else "Sem palavras prioritárias" }}</span>
+        <strong>Palavras prioritarias</strong>
+        <span>{{ transcript_insights.priority_keywords|join(", ") if transcript_insights.priority_keywords else "Sem palavras prioritarias" }}</span>
       </div>
       <div class="meta-item">
-        <strong>Padrões a evitar</strong>
-        <span>{{ transcript_insights.avoid_patterns|join(", ") if transcript_insights.avoid_patterns else "Sem padrões a evitar" }}</span>
+        <strong>Padroes a evitar</strong>
+        <span>{{ transcript_insights.avoid_patterns|join(", ") if transcript_insights.avoid_patterns else "Sem padroes a evitar" }}</span>
       </div>
     </div>
 
@@ -1456,21 +1957,21 @@
     <div class="section-label">Trechos promissores</div>
     {% for item in transcript_insights.promising_ranges %}
     <div class="snippet" style="margin-bottom: 8px;">
-      <strong>{{ item.label }}</strong>{% if item.why %} — {{ item.why }}{% endif %}
+      <strong>{{ item.label }}</strong>{% if item.why %} - {{ item.why }}{% endif %}
     </div>
     {% endfor %}
     {% endif %}
   </div>
   {% endif %}
 
-  <div class="card">
-    <h2>🔍 Análise</h2>
-    <form method="get" action="/jobs/{{ job.id }}/view" class="form-group toolbar">
+  <div class="card compact-card">
+    <h2>Analise</h2>
+    <form method="get" action="/jobs/{{ job.id }}/view" class="form-group toolbar compact-toolbar">
       <div>
         <label><strong>Formato</strong></label>
         <select name="mode">
-          <option value="short" {% if mode=="short" %}selected{% endif %}>📱 Short (vertical 9:16)</option>
-          <option value="long" {% if mode=="long" %}selected{% endif %}>📺 Long (horizontal 16:9)</option>
+          <option value="short" {% if mode=="short" %}selected{% endif %}>Short (vertical 9:16)</option>
+          <option value="long" {% if mode=="long" %}selected{% endif %}>Long (horizontal 16:9)</option>
         </select>
       </div>
       <div>
@@ -1493,10 +1994,10 @@
         </select>
       </div>
       <div>
-        <label><strong>Ordenação candidatos</strong></label>
+        <label><strong>Ordenacao candidatos</strong></label>
         <select name="candidate_sort">
-          <option value="hybrid" {% if candidate_sort == "hybrid" %}selected{% endif %}>Ranking híbrido</option>
-          <option value="heuristic" {% if candidate_sort == "heuristic" %}selected{% endif %}>Heurístico puro</option>
+          <option value="hybrid" {% if candidate_sort == "hybrid" %}selected{% endif %}>Ranking hibrido</option>
+          <option value="heuristic" {% if candidate_sort == "heuristic" %}selected{% endif %}>Heuristico puro</option>
           <option value="llm" {% if candidate_sort == "llm" %}selected{% endif %}>Confiança da LLM</option>
           <option value="divergent" {% if candidate_sort == "divergent" %}selected{% endif %}>Maior divergência</option>
         </select>
@@ -1513,115 +2014,23 @@
         </select>
       </div>
       <div>
-        <label><strong>Filtro exportações</strong></label>
+        <label><strong>Filtro exportacoes</strong></label>
         <select name="export_filter">
           <option value="all" {% if export_filter == "all" %}selected{% endif %}>Todas</option>
           <option value="latest" {% if export_filter == "latest" %}selected{% endif %}>Somente mais recente</option>
         </select>
       </div>
       <div>
-        <button type="submit">🔄 Atualizar análise</button>
+        <button type="submit">Atualizar analise</button>
       </div>
     </form>
   </div>
 
-  <div class="card" id="manual-render-card">
-    <h2>✂️ Render manual</h2>
-    <p style="color: #888; font-size: 13px;">Preencha os tempos manualmente ou clique em um dos botões dos candidatos abaixo.</p>
-
-    {% if not job.transcript_path %}
-    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Este corte manual pode sair agora. A legenda embutida sera ignorada ate existir transcricao.</p>
-    {% endif %}
-
-    <form method="post" action="/jobs/{{ job.id }}/view/render-manual" class="form-group toolbar">
-      <div>
-        <label for="start"><strong>Início (hh:mm:ss ou segundos)</strong></label>
-        <div style="display: grid; grid-template-columns: repeat(3, minmax(68px, 1fr)); gap: 8px;">
-          <input type="number" min="0" step="1" name="start_hours" id="start_hours" placeholder="hh" required>
-          <input type="number" min="0" step="1" name="start_minutes" id="start_minutes" placeholder="mm" required>
-          <input type="number" min="0" step="0.1" name="start_seconds" id="start_seconds" placeholder="ss" required>
-        </div>
-        <input type="hidden" name="start" id="start">
-        {% if auto_refresh_enabled %}
-        <div id="auto-refresh-control" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-          <span id="auto-refresh-indicator" class="badge">Monitoramento automatico ativo</span>
-          <button id="auto-refresh-toggle" type="button" class="ghost-button">Pausar auto-refresh</button>
-        </div>
-        {% endif %}
-      </div>
-
-      <div>
-        <label for="end"><strong>Fim (hh:mm:ss ou segundos)</strong></label>
-        <div style="display: grid; grid-template-columns: repeat(3, minmax(68px, 1fr)); gap: 8px;">
-          <input type="number" min="0" step="1" name="end_hours" id="end_hours" placeholder="hh" required>
-          <input type="number" min="0" step="1" name="end_minutes" id="end_minutes" placeholder="mm" required>
-          <input type="number" min="0" step="0.1" name="end_seconds" id="end_seconds" placeholder="ss" required>
-        </div>
-        <input type="hidden" name="end" id="end">
-      </div>
-
-      <div>
-        <label for="manual_mode"><strong>Formato</strong></label>
-        <select name="mode" id="manual_mode">
-          <option value="short" {% if mode=="short" %}selected{% endif %}>📱 Short (9:16)</option>
-          <option value="long" {% if mode=="long" %}selected{% endif %}>📺 Long (16:9)</option>
-        </select>
-      </div>
-
-      <div>
-        <label for="manual_preset"><strong>Preset visual</strong></label>
-        <select name="render_preset" id="manual_preset">
-          {% for preset in render_presets %}
-          <option value="{{ preset.key }}" {% if render_preset == preset.key %}selected{% endif %}>{{ preset.label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <input type="checkbox" name="burn_subtitles" value="true" id="manual_subtitles">
-        <label for="manual_subtitles" style="margin: 0;">Legenda embutida{% if not job.transcript_path %} (indisponivel sem transcricao){% endif %}</label>
-      </div>
-
-      <div>
-        <button type="submit">🎬 Renderizar</button>
-      </div>
-    </form>
-
-    <div class="quick-adjust">
-      <button type="button" onclick="adjustStart(-5)">-5s início</button>
-      <button type="button" onclick="adjustStart(5)">+5s início</button>
-      <button type="button" onclick="adjustEnd(-5)">-5s fim</button>
-      <button type="button" onclick="adjustEnd(5)">+5s fim</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Fila editorial</h2>
-    <p style="color: #888; font-size: 13px;">Aprove os melhores candidatos, marque favoritos e renderize o lote somente quando a seleção estiver pronta.</p>
-    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Preset ativo: <strong>{{ render_preset }}</strong></p>
-    <form method="post" action="/jobs/{{ job.id }}/view/render-approved" class="form-group toolbar">
-      <input type="hidden" name="mode" value="{{ mode }}">
-      <input type="hidden" name="render_preset" value="{{ render_preset }}">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <input type="checkbox" name="burn_subtitles" value="true" id="approved_subtitles">
-        <label for="approved_subtitles" style="margin: 0;">Legenda embutida no lote</label>
-      </div>
-      <div>
-        <button type="submit">Renderizar aprovados</button>
-      </div>
-      {% if clips %}
-      <div>
-        <a href="/jobs/{{ job.id }}/export" target="_blank" style="display: inline-flex; align-items: center; padding: 12px 14px; border-radius: 8px; background: #252525; border: 1px solid #333; color: #fff;">Exportar pacote</a>
-      </div>
-      {% endif %}
-    </form>
-  </div>
-
-  <div class="card">
-    <h2>Candidatos</h2>
+  <div class="card" id="clips-card">
+    <h2>Fila de candidatos</h2>
     {% if candidates_missing and job.status in ["analyzing", "llm_enrichment"] %}
     <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: #17304a; border: 1px solid #2c5372; color: #d8ecff;">
-      A analise incremental ainda está processando os primeiros blocos da transcricao. Os candidatos aparecem aqui assim que cada chunk termina.
+      A analise incremental ainda esta processando os primeiros blocos da transcricao. Os candidatos aparecem aqui assim que cada chunk termina.
     </div>
     {% elif candidates_missing %}
     <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: #2b2412; border: 1px solid #5c4a1e; color: #f6dea0;">
@@ -1656,7 +2065,7 @@
         <div class="candidate-header">
           <div>
             <div class="candidate-number">#{{ loop.index0 }} - {{ candidate.time_range_label }}</div>
-            <div class="candidate-info">Duracao: {{ candidate.duration_mmss }}</div>
+            <div class="candidate-info">Duracao: {{ candidate.duration_mmss }} | {{ candidate.format_label }}</div>
           </div>
           <label class="candidate-select" for="candidate_bulk_{{ candidate.candidate_id }}">
             <input form="bulk-candidate-form" id="candidate_bulk_{{ candidate.candidate_id }}" type="checkbox" name="candidate_ids" value="{{ candidate.candidate_id }}">
@@ -1664,18 +2073,44 @@
           </label>
         </div>
 
+        <div class="candidate-top-actions">
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="status" value="approved">
+            <button type="submit" class="accent-button">Aprovar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="status" value="rejected">
+            <button type="submit" class="danger-button">Rejeitar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/render-candidate">
+            <input type="hidden" name="candidate_id" value="{{ candidate.candidate_id }}">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <input type="hidden" name="render_preset" value="{{ render_preset }}">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" name="burn_subtitles" value="true" id="cb{{ loop.index0 }}">
+              <label for="cb{{ loop.index0 }}" style="margin: 0; font-size: 12px;">Legenda</label>
+            </div>
+            <button type="submit">Renderizar</button>
+          </form>
+
+          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/favorite">
+            <input type="hidden" name="mode" value="{{ mode }}">
+            <button type="submit">{% if candidate.is_favorite %}Desfavoritar{% else %}Favoritar{% endif %}</button>
+          </form>
+        </div>
+
         <div class="badge-row">
-          <span class="badge">{{ candidate.format_label }}</span>
-
           {% if candidate.score >= 7 %}
-          <span class="badge badge-score-strong">⭐ {{ candidate.score }} — {{ candidate.score_label }}</span>
+          <span class="badge badge-score-strong">{{ candidate.score }} - {{ candidate.score_label }}</span>
           {% elif candidate.score >= 4 %}
-          <span class="badge badge-score-medium">⚡ {{ candidate.score }} — {{ candidate.score_label }}</span>
+          <span class="badge badge-score-medium">{{ candidate.score }} - {{ candidate.score_label }}</span>
           {% else %}
-          <span class="badge badge-score-weak">💧 {{ candidate.score }} — {{ candidate.score_label }}</span>
+          <span class="badge badge-score-weak">{{ candidate.score }} - {{ candidate.score_label }}</span>
           {% endif %}
-          <span class="badge">Heurístico {{ candidate.heuristic_score }}</span>
-
           <span class="badge">{{ candidate.reason }}</span>
           {% if candidate.status == "approved" %}
           <span class="badge badge-status-approved">Aprovado</span>
@@ -1711,159 +2146,254 @@
           {% endif %}
         </div>
 
-        {% if candidate.transcript_context_reasons %}
-        <div class="section-label">Contexto global</div>
-        <div class="snippet">
-          {{ candidate.transcript_context_reasons|join(", ") }}
-        </div>
-        {% endif %}
-
-        <div class="section-label">Breakdown do score</div>
-        <div class="metric-grid">
-          {% for metric in candidate.score_breakdown %}
-          <div class="metric-card metric-{{ metric.tone }}">
-            <span class="metric-label">{{ metric.label }}</span>
-            <span class="metric-value">
-              {% if metric.value is not none %}{{ metric.value }}{% else %}--{% endif %}
-            </span>
-          </div>
-          {% endfor %}
-        </div>
-
-        {% if candidate.divergence_summary %}
-        <div class="section-label">Revisão humana sugerida</div>
-        <div class="snippet">
-          {{ candidate.divergence_summary }}
-        </div>
-        {% endif %}
-
-        {% if candidate.adaptive_blend_explanation %}
-        <div class="section-label">Explicação adaptativa</div>
-        <div class="snippet">
-          {{ candidate.adaptive_blend_explanation }}
-        </div>
-        {% endif %}
-
-        {% if candidate.llm_why or candidate.llm_title or candidate.llm_hook %}
-        <div class="section-label">Revisão LLM</div>
-        {% if candidate.llm_title %}
-        <div class="snippet" style="margin-bottom: 8px;">
-          <strong>Título sugerido:</strong> {{ candidate.llm_title }}
-        </div>
-        {% endif %}
-        {% if candidate.llm_hook %}
-        <div class="snippet" style="margin-bottom: 8px;">
-          <strong>Gancho sugerido:</strong> {{ candidate.llm_hook }}
-        </div>
-        {% endif %}
-        {% if candidate.llm_why %}
-        <div class="snippet">
-          <strong>Leitura editorial:</strong> {{ candidate.llm_why }}
-        </div>
-        {% endif %}
-        {% endif %}
-
-        <div class="section-label">📌 Gancho inicial</div>
+        <div class="section-label">Gancho inicial</div>
         <div class="snippet">
           {{ candidate.opening_preview }}
         </div>
 
-        {% if candidate.closing_preview %}
-        <div class="section-label">🎯 Fechamento</div>
-        <div class="snippet">
-          {{ candidate.closing_preview }}
-        </div>
-        {% endif %}
-
-        <div class="section-label">📋 Prévia do texto</div>
-        <div class="snippet">
-          {{ candidate.text[:400] }}{% if candidate.text|length > 400 %}...{% endif %}
-        </div>
-
-        <div class="candidate-actions">
-          <form method="post" action="/jobs/{{ job.id }}/view/render-candidate">
-            <input type="hidden" name="candidate_id" value="{{ candidate.candidate_id }}">
-            <input type="hidden" name="mode" value="{{ mode }}">
-            <input type="hidden" name="render_preset" value="{{ render_preset }}">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <input type="checkbox" name="burn_subtitles" value="true" id="cb{{ loop.index0 }}">
-              <label for="cb{{ loop.index0 }}" style="margin: 0; font-size: 12px;">Legenda</label>
+        <details class="candidate-details">
+          <summary>Expandir leitura completa</summary>
+          <div class="candidate-details-body">
+            {% if candidate.transcript_context_reasons %}
+            <div class="section-label">Contexto global</div>
+            <div class="snippet">
+              {{ candidate.transcript_context_reasons|join(", ") }}
             </div>
-            <button type="submit">🎬 Renderizar</button>
-          </form>
+            {% endif %}
 
-          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
-            <input type="hidden" name="mode" value="{{ mode }}">
-            <input type="hidden" name="status" value="approved">
-            <button type="submit" class="accent-button">Aprovar</button>
-          </form>
+            <div class="section-label">Leitura do score</div>
+            <div class="metric-grid">
+              {% for metric in candidate.score_breakdown %}
+              <div class="metric-card metric-{{ metric.tone }}">
+                <span class="metric-label">{{ metric.label }}</span>
+                <span class="metric-value">
+                  {% if metric.value is not none %}{{ metric.value }}{% else %}--{% endif %}
+                </span>
+              </div>
+              {% endfor %}
+            </div>
 
-          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
-            <input type="hidden" name="mode" value="{{ mode }}">
-            <input type="hidden" name="status" value="rejected">
-            <button type="submit" class="danger-button">Rejeitar</button>
-          </form>
+            {% if candidate.divergence_summary %}
+            <div class="section-label">Revisao humana sugerida</div>
+            <div class="snippet">
+              {{ candidate.divergence_summary }}
+            </div>
+            {% endif %}
 
-          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
-            <input type="hidden" name="mode" value="{{ mode }}">
-            <input type="hidden" name="status" value="pending">
-            <button type="submit" class="ghost-button">Resetar</button>
-          </form>
+            {% if candidate.adaptive_blend_explanation %}
+            <div class="section-label">Explicação adaptativa</div>
+            <div class="snippet">
+              {{ candidate.adaptive_blend_explanation }}
+            </div>
+            {% endif %}
 
-          <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/favorite">
-            <input type="hidden" name="mode" value="{{ mode }}">
-            <button type="submit">{% if candidate.is_favorite %}Desfavoritar{% else %}Favoritar{% endif %}</button>
-          </form>
+            {% if candidate.llm_why or candidate.llm_title or candidate.llm_hook %}
+            <div class="section-label">Revisao LLM</div>
+            {% if candidate.llm_title %}
+            <div class="snippet" style="margin-bottom: 8px;">
+              <strong>Titulo sugerido:</strong> {{ candidate.llm_title }}
+            </div>
+            {% endif %}
+            {% if candidate.llm_hook %}
+            <div class="snippet" style="margin-bottom: 8px;">
+              <strong>Gancho sugerido:</strong> {{ candidate.llm_hook }}
+            </div>
+            {% endif %}
+            {% if candidate.llm_why %}
+            <div class="snippet">
+              <strong>Leitura editorial:</strong> {{ candidate.llm_why }}
+            </div>
+            {% endif %}
+            {% endif %}
 
-          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end }}, '{{ mode }}')">
-            📝 Usar no manual
-          </button>
+            {% if candidate.closing_preview %}
+            <div class="section-label">Fechamento</div>
+            <div class="snippet">
+              {{ candidate.closing_preview }}
+            </div>
+            {% endif %}
 
-          <button type="button" class="ghost-button" onclick="previewCandidateInOriginal({{ candidate.start }}, {{ candidate.end }})">
-            👁️ Ver no original
-          </button>
+            <div class="section-label">Previa do texto</div>
+            <div class="snippet">
+              {{ candidate.text[:400] }}{% if candidate.text|length > 400 %}...{% endif %}
+            </div>
 
-          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start - 5 if candidate.start - 5 > 0 else 0 }}, {{ candidate.end }}, '{{ mode }}')">
-            ◀ -5s início
-          </button>
+            <div class="candidate-actions">
+              <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/status">
+                <input type="hidden" name="mode" value="{{ mode }}">
+                <input type="hidden" name="status" value="pending">
+                <button type="submit" class="ghost-button">Resetar</button>
+              </form>
 
-          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start + 5 }}, {{ candidate.end }}, '{{ mode }}')">
-            ▶ +5s início
-          </button>
+              <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end }}, '{{ mode }}')">
+                Enviar ao manual
+              </button>
 
-          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end - 5 if candidate.end - 5 > candidate.start else candidate.end }}, '{{ mode }}')">
-            ◀ -5s fim
-          </button>
+              <button type="button" class="ghost-button" onclick="previewCandidateInOriginal({{ candidate.start }}, {{ candidate.end }})">
+                Ver no original
+              </button>
 
-          <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end + 5 }}, '{{ mode }}')">
-            ▶ +5s fim
-          </button>
-        </div>
+              <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start - 5 if candidate.start - 5 > 0 else 0 }}, {{ candidate.end }}, '{{ mode }}')">
+                -5s inicio
+              </button>
 
-        <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/notes" class="notes-form">
-          <input type="hidden" name="mode" value="{{ mode }}">
-          <label for="notes{{ candidate.candidate_id }}" style="font-size: 12px; color: #aaa;">Notas editoriais</label>
-          <textarea id="notes{{ candidate.candidate_id }}" name="editorial_notes" placeholder="Ex.: bom gancho, mas ajustar início em 3s...">{{ candidate.editorial_notes }}</textarea>
-          <div>
-            <button type="submit" class="ghost-button">Salvar nota</button>
+              <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start + 5 }}, {{ candidate.end }}, '{{ mode }}')">
+                +5s inicio
+              </button>
+
+              <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end - 5 if candidate.end - 5 > candidate.start else candidate.end }}, '{{ mode }}')">
+                -5s fim
+              </button>
+
+              <button type="button" class="ghost-button" onclick="fillManualForm({{ candidate.start }}, {{ candidate.end + 5 }}, '{{ mode }}')">
+                +5s fim
+              </button>
+            </div>
+
+            <form method="post" action="/jobs/{{ job.id }}/view/candidates/{{ candidate.candidate_id }}/notes" class="notes-form">
+              <input type="hidden" name="mode" value="{{ mode }}">
+              <label for="notes{{ candidate.candidate_id }}" style="font-size: 12px; color: #aaa;">Notas editoriais</label>
+              <textarea id="notes{{ candidate.candidate_id }}" name="editorial_notes" placeholder="Ex.: bom gancho, mas ajustar inicio em 3s...">{{ candidate.editorial_notes }}</textarea>
+              <div>
+                <button type="submit" class="ghost-button">Salvar nota</button>
+              </div>
+            </form>
           </div>
-        </form>
+        </details>
       </div>
       {% endfor %}
-    {% else %}
+  {% else %}
       <div class="empty-state">
-        📭 Nenhum candidato disponível ainda.
+        Nenhum candidato disponivel ainda.
       </div>
     {% endif %}
   </div>
 
-  <div class="card">
-    <h2>🎞️ Clips gerados</h2>
+  <div class="card compact-card" id="manual-render-card">
+    <h2>Render manual</h2>
+    <p style="color: #888; font-size: 13px;">Preencha os tempos manualmente ou clique em um dos botoes dos candidatos abaixo.</p>
+
+    {% if not job.transcript_path %}
+    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Este corte manual pode sair agora. A legenda embutida sera ignorada ate existir transcricao.</p>
+    {% endif %}
+
+    <form method="post" action="/jobs/{{ job.id }}/view/render-manual" class="form-group toolbar compact-toolbar">
+      <div>
+        <label for="start"><strong>Inicio (hh:mm:ss ou segundos)</strong></label>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(68px, 1fr)); gap: 8px;">
+          <input type="number" min="0" step="1" name="start_hours" id="start_hours" placeholder="hh" required>
+          <input type="number" min="0" step="1" name="start_minutes" id="start_minutes" placeholder="mm" required>
+          <input type="number" min="0" step="0.1" name="start_seconds" id="start_seconds" placeholder="ss" required>
+        </div>
+        <input type="hidden" name="start" id="start">
+        {% if auto_refresh_enabled %}
+        <div id="auto-refresh-control" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+          <span id="auto-refresh-indicator" class="badge">Monitoramento automatico ativo</span>
+          <button id="auto-refresh-toggle" type="button" class="ghost-button">Pausar auto-refresh</button>
+        </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="end"><strong>Fim (hh:mm:ss ou segundos)</strong></label>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(68px, 1fr)); gap: 8px;">
+          <input type="number" min="0" step="1" name="end_hours" id="end_hours" placeholder="hh" required>
+          <input type="number" min="0" step="1" name="end_minutes" id="end_minutes" placeholder="mm" required>
+          <input type="number" min="0" step="0.1" name="end_seconds" id="end_seconds" placeholder="ss" required>
+        </div>
+        <input type="hidden" name="end" id="end">
+      </div>
+
+      <div>
+        <label for="manual_mode"><strong>Formato</strong></label>
+        <select name="mode" id="manual_mode">
+          <option value="short" {% if mode=="short" %}selected{% endif %}>Short (9:16)</option>
+          <option value="long" {% if mode=="long" %}selected{% endif %}>Long (16:9)</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="manual_preset"><strong>Preset visual</strong></label>
+        <select name="render_preset" id="manual_preset">
+          {% for preset in render_presets %}
+          <option value="{{ preset.key }}" {% if render_preset == preset.key %}selected{% endif %}>{{ preset.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" name="burn_subtitles" value="true" id="manual_subtitles">
+        <label for="manual_subtitles" style="margin: 0;">Legenda embutida{% if not job.transcript_path %} (indisponivel sem transcricao){% endif %}</label>
+      </div>
+
+      <div>
+        <button type="submit">Renderizar</button>
+      </div>
+    </form>
+
+    <div class="quick-adjust">
+      <button type="button" onclick="adjustStart(-5)">-5s inicio</button>
+      <button type="button" onclick="adjustStart(5)">+5s inicio</button>
+      <button type="button" onclick="adjustEnd(-5)">-5s fim</button>
+      <button type="button" onclick="adjustEnd(5)">+5s fim</button>
+    </div>
+  </div>
+
+  <div class="card compact-card" id="editorial-queue-card">
+    <h2>Fila editorial</h2>
+    <p style="color: #888; font-size: 13px;">Aprove os melhores candidatos, marque favoritos e renderize o lote somente quando a selecao estiver pronta.</p>
+    <p style="color: #72e0a6; font-size: 13px; margin-top: -4px;">Preset ativo: <strong>{{ render_preset }}</strong></p>
+    <form method="post" action="/jobs/{{ job.id }}/view/render-approved" class="form-group toolbar compact-toolbar">
+      <input type="hidden" name="mode" value="{{ mode }}">
+      <input type="hidden" name="render_preset" value="{{ render_preset }}">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" name="burn_subtitles" value="true" id="approved_subtitles">
+        <label for="approved_subtitles" style="margin: 0;">Legenda embutida no lote</label>
+      </div>
+      <div>
+        <button type="submit">Renderizar aprovados</button>
+      </div>
+      {% if clips %}
+      <div>
+        <a href="/jobs/{{ job.id }}/export" target="_blank" style="display: inline-flex; align-items: center; padding: 12px 14px; border-radius: 8px; background: #252525; border: 1px solid #333; color: #fff;">Exportar pacote</a>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="card" id="exports-card">
+    <div class="section-intro">
+      <div class="title-stack">
+        <h2 style="margin-bottom: 0;">Clips gerados</h2>
+        <p>Saidas prontas para revisar, publicar e baixar sem precisar cavar detalhes no meio da tela.</p>
+      </div>
+    </div>
     {% if clips %}
       {% for clip in clips %}
       <div class="clip{% if clip.publication_status == 'ready' %} clip-ready{% elif clip.publication_status == 'published' %} clip-published{% endif %}">
+        <div class="clip-head">
+          <div class="clip-title">
+            <div class="clip-title-line">
+              <strong>Clip #{{ clip.id }}</strong>
+              <span class="status-badge {% if clip.publication_status == 'published' %}status-analyzing{% elif clip.publication_status == 'ready' %}status-done{% else %}status-pending{% endif %}">{{ clip.publication_status_label }}</span>
+            </div>
+            <div class="clip-meta">
+              <span>{{ clip.mode }} / {{ clip.format_label }}</span>
+              <span>{{ clip.start_mmss }} ate {{ clip.end_mmss }}</span>
+              <span>{{ clip.duration_mmss }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="clip-info clip-info-clean">
+          <span class="clip-chip">Origem: {{ clip.source }}</span>
+          {% if clip.score is not none %}<span class="clip-chip">Score: {{ clip.score }}</span>{% endif %}
+          <span class="clip-chip">Legenda: {% if clip.subtitles_burned %}sim{% else %}nao{% endif %}</span>
+          {% if clip.render_preset %}<span class="clip-chip">Preset: {{ clip.render_preset }}</span>{% endif %}
+          <span class="clip-chip">Status: {{ clip.publication_status_label }}</span>
+        </div>
         <p style="margin: 0 0 8px 0;">
-          <strong>Clip #{{ clip.id }}</strong>
+            <strong>Clip #{{ clip.id }}</strong>
+            <span>{{ clip.publication_status_label }}</span>
           <span style="color: #888; font-size: 12px;">
             — {{ clip.mode }} / {{ clip.format_label }}
             — {{ clip.start_mmss }} até {{ clip.end_mmss }}
@@ -1883,7 +2413,7 @@
           <input type="hidden" name="mode" value="{{ mode }}">
           <input type="hidden" name="render_preset" value="{{ render_preset }}">
           <div>
-            <label><strong>Status de publicação</strong></label>
+            <label><strong>Status de publicacao</strong></label>
             <select name="status">
               <option value="draft" {% if clip.publication_status == "draft" %}selected{% endif %}>Rascunho</option>
               <option value="ready" {% if clip.publication_status == "ready" %}selected{% endif %}>Pronto</option>
@@ -1897,12 +2427,12 @@
         </form>
 
         {% if clip.headline %}
-        <div class="section-label">Título sugerido</div>
+        <div class="section-label">Titulo sugerido</div>
         <div class="snippet">{{ clip.headline }}</div>
         {% endif %}
 
         {% if clip.description %}
-        <div class="section-label">Descrição curta</div>
+        <div class="section-label">Descricao curta</div>
         <div class="snippet">{{ clip.description }}</div>
         {% endif %}
 
@@ -1917,7 +2447,7 @@
         {% endif %}
 
         <p style="margin: 8px 0;">
-          <a href="{{ build_static_url(clip.output_path) }}" target="_blank">🎬 Abrir clip</a>
+          <a href="{{ build_static_url(clip.output_path) }}" target="_blank">Abrir clip</a>
         </p>
 
         {% if build_static_url(clip.output_path) %}
@@ -1930,7 +2460,7 @@
       {% endfor %}
     {% else %}
       <div class="empty-state">
-        🎬 Nenhum clip renderizado ainda.
+        Nenhum clip renderizado ainda.
       </div>
     {% endif %}
   </div>
@@ -1957,6 +2487,12 @@
   </div>
   {% endif %}
 
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
   <script>
     const jobMonitorEndpoint = "/jobs/{{ job.id }}/monitor";
     const jobAutoRefreshEnabled = {{ "true" if auto_refresh_enabled else "false" }};
@@ -2053,12 +2589,12 @@
             </div>
             <div><span class="status-badge ${step.status === "completed" ? "status-done" : step.status === "running" ? "status-analyzing" : step.status === "failed" || step.status === "exhausted" ? "status-failed" : "status-pending"}">${escapeHtml(step.status_label)}</span></div>
           </div>
-          ${step.error_message ? `<div class="error-box"><strong>Erro:</strong> ${escapeHtml(step.error_message)}</div>` : ""}
           ${summaryItems ? `<div class="step-summary">${summaryItems}</div>` : ""}
-          ${step.status === "running" && (step.progress_message || step.heartbeat_at) ? `<div class="snippet" style="margin-top: 10px;">${step.progress_percent !== null && step.progress_percent !== undefined ? `<div class="progress-bar" style="margin: 0 0 10px 0;"><div class="progress-fill" style="width: ${escapeHtml(step.progress_percent)}%;"></div></div><strong>Progresso:</strong> ${escapeHtml(step.progress_percent)}%<br>` : ""}${step.progress_message ? `<strong>Atividade atual:</strong> ${escapeHtml(step.progress_message)}<br>` : ""}${step.heartbeat_at ? `<strong>Ultima atividade:</strong> ${escapeHtml(step.heartbeat_at)}` : ""}</div>` : ""}
+          ${step.status === "running" && (step.progress_message || step.heartbeat_at) ? `<div class="step-running">${step.progress_percent !== null && step.progress_percent !== undefined ? `<div class="progress-bar"><div class="progress-fill" style="width: ${escapeHtml(step.progress_percent)}%;"></div></div>` : ""}<div class="step-running-copy"><span>${step.progress_message ? escapeHtml(step.progress_message) : "Etapa em execucao"}</span><span>${step.progress_percent !== null && step.progress_percent !== undefined ? `${escapeHtml(step.progress_percent)}%` : ""}${step.heartbeat_at ? `${step.progress_percent !== null && step.progress_percent !== undefined ? " | " : ""}${escapeHtml(step.heartbeat_at)}` : ""}</span></div></div>` : ""}
+          ${step.error_message ? `<div class="error-box"><strong>Erro:</strong> ${escapeHtml(step.error_message)}</div>` : ""}
           ${step.status === "running" && step.heartbeat_is_stale ? `<div class="error-box"><strong>Possivel travamento:</strong> sem nova atividade ha pelo menos ${escapeHtml(step.heartbeat_age_seconds)}s.</div>` : ""}
           ${timelineItems ? `<div class="step-timeline">${timelineItems}</div>` : ""}
-          ${detailItems ? `<div class="step-details"><strong>Contexto da etapa:</strong>${detailItems}</div>` : ""}
+          ${detailItems ? `<details class="step-details"><summary>Ver contexto</summary>${detailItems}</details>` : ""}
           ${renderStepActions(step)}
         </div>
       `;
@@ -2369,7 +2905,4 @@
       }
     }
   </script>
-  </div>
-</body>
-
-</html>
+{% endblock %}

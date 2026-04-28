@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Conta - Cut SaaS{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="/assets/styles/pages/dashboard.css" />
+{% endblock %}
+
+{% block content %}
+  <main class="shell">
+    <section class="hero account-hero">
+      <div class="hero-panel">
+        <div class="eyebrow">Perfil da conta</div>
+        <h1 class="hero-title">
+          Sua identidade operacional em um painel so.
+          <span>Usuario, workspace, papel, consumo e sinais da conta em uma leitura mais limpa para administracao do produto.</span>
+        </h1>
+        <p class="hero-copy">
+          Esta visao ajuda a entender quem esta operando, em qual workspace e qual o volume atual de jobs, aprovacoes e clips sem ter que navegar por varias telas.
+        </p>
+        <div class="hero-metrics">
+          <div class="metric">
+            <strong>{{ user.display_name or "Sem nome" }}</strong>
+            <span>Nome exibido</span>
+          </div>
+          <div class="metric">
+            <strong>{{ membership.role|title if membership else "Membro" }}</strong>
+            <span>Papel no workspace</span>
+          </div>
+          <div class="metric">
+            <strong>{{ workspace.name }}</strong>
+            <span>Workspace ativo</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-side account-hero-side">
+        <section class="surface account-summary-surface">
+          {% set active_page = "account" %}
+          {% include "partials/global_actions.html" %}
+          <div style="margin-top: 18px;">
+            <h3 style="margin-bottom: 10px;">Resumo da conta</h3>
+            <p>
+              Email principal: {{ user.email }}.
+              {% if quota_status.is_exceeded %}
+                O workspace esta acima do limite mensal atual.
+              {% elif quota_status.is_near_limit %}
+                O workspace esta perto do limite mensal atual.
+              {% else %}
+                O workspace segue com margem operacional neste ciclo.
+              {% endif %}
+            </p>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="surface account-identity-surface">
+      <div class="section-title">
+        <div>
+          <h2>Identidade</h2>
+          <p>Informacoes basicas da conta autenticada e do workspace em uso.</p>
+        </div>
+      </div>
+
+      <div class="board-grid account-identity-grid">
+        <article class="board-card account-identity-card">
+          <h3>Usuario</h3>
+          <div class="board-item">
+            <strong>Nome</strong>
+            <p>{{ user.display_name or "Sem nome configurado" }}</p>
+          </div>
+          <div class="board-item">
+            <strong>Email</strong>
+            <p>{{ user.email }}</p>
+          </div>
+          <div class="board-item">
+            <strong>Status</strong>
+            <p>{{ user.status }}</p>
+          </div>
+        </article>
+
+        <article class="board-card account-identity-card">
+          <h3>Workspace</h3>
+          <div class="board-item">
+            <strong>Nome</strong>
+            <p>{{ workspace.name }}</p>
+          </div>
+          <div class="board-item">
+            <strong>Slug</strong>
+            <p>{{ workspace.slug }}</p>
+          </div>
+          <div class="board-item">
+            <strong>Papel</strong>
+            <p>{{ membership.role if membership else "member" }}</p>
+          </div>
+        </article>
+
+        <article class="board-card account-identity-card">
+          <h3>Plano e limite</h3>
+          <div class="board-item">
+            <strong>Plano</strong>
+            <p>{{ quota_status.plan.name }}</p>
+          </div>
+          <div class="board-item">
+            <strong>Uso mensal</strong>
+            <p>{{ "%.1f"|format(quota_status.used_video_minutes) }} de {{ "%.0f"|format(quota_status.limit_video_minutes) }} minutos</p>
+          </div>
+          <div class="board-item">
+            <strong>Saldo</strong>
+            <p>{{ "%.1f"|format(quota_status.remaining_video_minutes) }} minutos restantes</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="surface account-activity-surface">
+      <div class="section-title">
+        <div>
+          <h2>Atividade do workspace</h2>
+          <p>Numeros rapidos para enxergar o volume atual da operacao.</p>
+        </div>
+      </div>
+
+      <div class="kpi-grid account-activity-grid">
+        <div class="kpi-card account-activity-card">
+          <strong>{{ jobs_count }}</strong>
+          <span>Jobs no workspace</span>
+        </div>
+        <div class="kpi-card account-activity-card">
+          <strong>{{ approved_candidates_count }}</strong>
+          <span>Candidatos aprovados</span>
+        </div>
+        <div class="kpi-card account-activity-card">
+          <strong>{{ rendered_clips_count }}</strong>
+          <span>Clips gerados</span>
+        </div>
+        <div class="kpi-card account-activity-card">
+          <strong>{{ quota_status.plan.name }}</strong>
+          <span>Plano operacional</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="surface account-commercial-surface">
+      <div class="section-title">
+        <div>
+          <h2>Leitura comercial</h2>
+          <p>Um retrato rapido do quanto essa conta ja parece operacao real e onde existe espaco para crescer.</p>
+        </div>
+      </div>
+
+      <div class="ops-grid account-commercial-grid">
+        <article class="ops-card account-commercial-card">
+          <strong>Momento da conta</strong>
+          <p>
+            {% if jobs_count >= 10 %}
+              O workspace ja tem historico suficiente para ser tratado como operacao ativa.
+            {% elif jobs_count >= 3 %}
+              O workspace esta saindo da fase de teste e entrando em rotina.
+            {% else %}
+              A conta ainda esta em fase inicial de configuracao e validacao.
+            {% endif %}
+          </p>
+          <span>{{ jobs_count }} job(s) acumulado(s)</span>
+        </article>
+        <article class="ops-card account-commercial-card">
+          <strong>Foco editorial</strong>
+          <p>{{ approved_candidates_count }} candidatos aprovados e {{ rendered_clips_count }} clips gerados ate agora no workspace.</p>
+          <span>prova de uso</span>
+        </article>
+        <article class="ops-card account-commercial-card">
+          <strong>Espaco para crescer</strong>
+          <p>
+            {% if quota_status.is_exceeded %}
+              O limite atual ja esta segurando a expansao da operacao.
+            {% elif quota_status.is_near_limit %}
+              O plano atual esta perto do teto e merece revisao.
+            {% else %}
+              Ainda existe margem para testar mais formatos antes de subir de plano.
+            {% endif %}
+          </p>
+          <span>{{ "%.1f"|format(quota_status.remaining_video_minutes) }} min restantes</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="surface account-actions-surface">
+      <div class="section-title">
+        <div>
+          <h2>Proximos caminhos</h2>
+          <p>Acesse os fluxos mais comuns a partir do perfil da conta.</p>
+        </div>
+      </div>
+
+      <div class="account-actions-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a class="chip-link" href="/dashboard">Abrir dashboard</a>
+        <a class="chip-link" href="/billing">Ver billing</a>
+        <a class="chip-link" href="/nichos">Gerenciar nichos</a>
+        <a class="chip-link" href="/system">Checar sistema</a>
+      </div>
+    </section>
+  </main>
+{% endblock %}

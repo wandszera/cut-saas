@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.candidate import Candidate
 from app.models.job import Job
 from app.core.config import settings
+from app.services.billing import workspace_has_billing_access
 from app.services.llm_analysis import analyze_candidates_with_llm
 from app.services.niche_learning import (
     get_feedback_profile_for_niche,
@@ -15,6 +16,28 @@ from app.services.niche_registry import get_niche_profile
 from app.services.analysis_calibration import build_analysis_calibration_profile
 from app.services.segmentation import load_segments, build_candidate_windows, split_segments_into_time_chunks
 from app.services.scoring import score_candidates
+
+
+def _get_mode_candidate_limits(
+    mode: str,
+    *,
+    db: Session | None = None,
+    workspace_id: int | None = None,
+) -> tuple[int, int]:
+    normalized_mode = (mode or "short").strip().lower()
+    if db is not None and workspace_id is not None and not workspace_has_billing_access(db, workspace_id):
+        if normalized_mode == "long":
+            return (0, 3)
+        return (0, 10)
+    if normalized_mode == "long":
+        return (
+            max(0, int(settings.long_min_candidates_per_job or 0)),
+            max(1, int(settings.long_max_candidates_per_job or 1)),
+        )
+    return (
+        max(0, int(settings.short_min_candidates_per_job or 0)),
+        max(1, int(settings.short_max_candidates_per_job or 1)),
+    )
 
 
 def rerank_candidates_if_enabled(
@@ -74,11 +97,17 @@ def regenerate_candidates_for_job_with_progress(
 
     niche = job.detected_niche or "geral"
     niche_profile = get_niche_profile(db, niche)
-    learned_keywords = get_learned_keywords_for_niche(db, niche)
-    feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
+    learned_keywords = get_learned_keywords_for_niche(db, niche, workspace_id=job.workspace_id)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, mode, workspace_id=job.workspace_id)
     transcript_insights = json.loads(job.transcript_insights) if job.transcript_insights else None
     calibration_profile = build_analysis_calibration_profile(db, niche=niche, mode=mode)
     created = []
+    deferred_duplicates: list[dict] = []
+    min_candidates, max_candidates = _get_mode_candidate_limits(
+        mode,
+        db=db,
+        workspace_id=job.workspace_id,
+    )
     for chunk_index, chunk_segments in enumerate(chunks, start=1):
         if progress_callback:
             chunk_start = float(chunk_segments[0].get("start", 0.0) or 0.0)
@@ -122,7 +151,11 @@ def regenerate_candidates_for_job_with_progress(
         chunk_new_count = 0
         total_ranked = len(ranked) or 1
         for item_index, item in enumerate(ranked, start=1):
+            if len(created) >= max_candidates:
+                break
+
             if _is_duplicate_candidate_window(item, existing_windows):
+                deferred_duplicates.append(item)
                 continue
 
             candidate = Candidate(
@@ -171,6 +204,65 @@ def regenerate_candidates_for_job_with_progress(
                 84 + int(round(chunk_index / total_chunks * 12)),
             )
 
+        if len(created) >= max_candidates:
+            break
+
+    if len(created) < min_candidates and deferred_duplicates:
+        relaxed_candidates = sorted(
+            deferred_duplicates,
+            key=lambda item: (
+                -(float(item.get("score") or 0.0)),
+                float(item.get("start") or 0.0),
+                float(item.get("end") or 0.0),
+            ),
+        )
+        for item in relaxed_candidates:
+            if len(created) >= min(min_candidates, max_candidates):
+                break
+            if _is_duplicate_candidate_window(
+                item,
+                existing_windows,
+                time_tolerance=settings.candidate_relaxed_time_tolerance_seconds,
+                overlap_ratio_threshold=settings.candidate_relaxed_overlap_ratio,
+            ):
+                continue
+
+            candidate = Candidate(
+                job_id=job.id,
+                mode=mode,
+                start_time=item["start"],
+                end_time=item["end"],
+                duration=item["duration"],
+                heuristic_score=item.get("base_score", item.get("score")),
+                score=item["score"],
+                reason=item.get("reason"),
+                opening_text=item.get("opening_text"),
+                closing_text=item.get("closing_text"),
+                full_text=item.get("text"),
+                hook_score=item.get("hook_score"),
+                clarity_score=item.get("clarity_score"),
+                closure_score=item.get("closure_score"),
+                emotion_score=item.get("emotion_score"),
+                duration_fit_score=item.get("duration_fit_score"),
+                transcript_context_score=item.get("transcript_context_score"),
+                llm_score=item.get("llm_score"),
+                llm_why=item.get("llm_why"),
+                llm_title=item.get("llm_title"),
+                llm_hook=item.get("llm_hook"),
+                status="pending",
+            )
+            db.add(candidate)
+            created.append(candidate)
+            existing_windows.append(
+                {
+                    "start": item["start"],
+                    "end": item["end"],
+                    "duration": item["duration"],
+                }
+            )
+
+        db.commit()
+
     for candidate in created:
         db.refresh(candidate)
 
@@ -181,8 +273,20 @@ def _is_duplicate_candidate_window(
     candidate: dict,
     existing_windows: list[dict],
     *,
-    time_tolerance: float = 8.0,
+    time_tolerance: float | None = None,
+    overlap_ratio_threshold: float | None = None,
 ) -> bool:
+    normalized_time_tolerance = (
+        settings.candidate_duplicate_time_tolerance_seconds
+        if time_tolerance is None
+        else float(time_tolerance)
+    )
+    normalized_overlap_ratio = (
+        settings.candidate_duplicate_overlap_ratio
+        if overlap_ratio_threshold is None
+        else float(overlap_ratio_threshold)
+    )
+
     for existing in existing_windows:
         overlap_start = max(float(candidate["start"]), float(existing["start"]))
         overlap_end = min(float(candidate["end"]), float(existing["end"]))
@@ -190,9 +294,9 @@ def _is_duplicate_candidate_window(
         shorter = min(float(candidate["duration"]), float(existing["duration"])) or 1.0
         overlap_ratio = overlap / shorter
         if (
-            abs(float(candidate["start"]) - float(existing["start"])) <= time_tolerance
-            and abs(float(candidate["end"]) - float(existing["end"])) <= time_tolerance
-        ) or overlap_ratio >= 0.9:
+            abs(float(candidate["start"]) - float(existing["start"])) <= normalized_time_tolerance
+            and abs(float(candidate["end"]) - float(existing["end"])) <= normalized_time_tolerance
+        ) or overlap_ratio >= normalized_overlap_ratio:
             return True
     return False
 

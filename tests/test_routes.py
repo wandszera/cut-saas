@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -15,16 +15,20 @@ from app.models.clip import Clip
 from app.models.job import Job
 from app.models.niche_definition import NicheDefinition
 from app.models.job_step import JobStep
+from app.models.subscription import Subscription
+from app.services.accounts import create_user_with_workspace
+from app.services.auth import create_session_token
 from app.services.llm_provider import LLMRateLimitError
 from app.services.niche_registry import create_pending_niche
 from app.services.pipeline import MAX_STEP_ATTEMPTS, process_job_pipeline
+from app.services.candidates import _get_mode_candidate_limits
 from app.services.segmentation import split_segments_into_time_chunks
 
 
 class RoutesTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.test_artifacts_dir = Path("tests/.tmp")
+        cls.test_artifacts_dir = Path("test_databases")
         cls.test_artifacts_dir.mkdir(parents=True, exist_ok=True)
         cls.db_path = cls.test_artifacts_dir / f"test_{uuid4().hex}.db"
         cls.engine = create_engine(
@@ -55,14 +59,42 @@ class RoutesTestCase(unittest.TestCase):
             cls.db_path.unlink()
 
     def setUp(self):
+        self.client.cookies.clear()
         Base.metadata.drop_all(bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
+        db = self._session()
+        try:
+            user, workspace, _membership = create_user_with_workspace(
+                db,
+                email=f"routes-{uuid4().hex}@example.com",
+                password_hash="hashed-password",
+                workspace_name="Routes Workspace",
+            )
+            db.add(
+                Subscription(
+                    workspace_id=workspace.id,
+                    provider="mock",
+                    provider_checkout_id=f"cs_routes_free_{uuid4().hex}",
+                    provider_customer_id=f"cus_routes_free_{uuid4().hex}",
+                    plan_slug="free",
+                    status="active",
+                )
+            )
+            db.commit()
+            db.refresh(user)
+            db.refresh(workspace)
+            self.user_id = user.id
+            self.workspace_id = workspace.id
+            self.client.cookies.set("cut_saas_session", create_session_token(user.id))
+        finally:
+            db.close()
 
     def _session(self):
         return self.TestingSessionLocal()
 
     def _create_job(self, **overrides) -> Job:
         payload = {
+            "workspace_id": self.workspace_id,
             "source_type": "youtube",
             "source_value": "https://www.youtube.com/watch?v=abc123def45",
             "status": "done",
@@ -157,6 +189,7 @@ class RoutesTestCase(unittest.TestCase):
 
     def _create_niche_definition(self, **overrides) -> NicheDefinition:
         payload = {
+            "workspace_id": self.workspace_id,
             "name": "Nicho Custom",
             "slug": "nicho-custom",
             "description": "Descricao de teste",
@@ -234,6 +267,10 @@ class RoutesTestCase(unittest.TestCase):
     def test_create_youtube_job_success(self):
         with (
             patch(
+                "app.api.routes_jobs.fetch_youtube_metadata",
+                return_value={"title": "Titulo do video", "video_id": "abc123def45", "duration_seconds": 1200},
+            ),
+            patch(
                 "app.api.routes_jobs.download_youtube_media",
                 return_value={
                     "video_path": "C:/tmp/job_1.mp4",
@@ -270,6 +307,7 @@ class RoutesTestCase(unittest.TestCase):
         local_video.write_bytes(b"fake-video")
 
         with (
+            patch("app.api.routes_jobs.probe_video_duration_seconds", return_value=1200),
             patch("app.api.routes_jobs.extract_audio_from_video", return_value="C:/tmp/job_local.mp3"),
             patch("app.api.routes_jobs.transcribe_audio", return_value="C:/tmp/job_local.json"),
         ):
@@ -297,9 +335,15 @@ class RoutesTestCase(unittest.TestCase):
             db.close()
 
     def test_create_youtube_job_failure_marks_job_as_failed(self):
-        with patch(
-            "app.api.routes_jobs.download_youtube_media",
-            side_effect=RuntimeError("falha simulada no download"),
+        with (
+            patch(
+                "app.api.routes_jobs.fetch_youtube_metadata",
+                return_value={"title": "Titulo do video", "video_id": "abc123def45", "duration_seconds": 1200},
+            ),
+            patch(
+                "app.api.routes_jobs.download_youtube_media",
+                side_effect=RuntimeError("falha simulada no download"),
+            ),
         ):
             response = self.client.post(
                 "/jobs/youtube",
@@ -318,7 +362,10 @@ class RoutesTestCase(unittest.TestCase):
             db.close()
 
     def test_web_job_creation_redirects_and_runs_background_pipeline(self):
-        with patch("app.web.routes_pages.process_job_pipeline") as mocked_pipeline:
+        with (
+            patch("app.web.routes_pages.fetch_youtube_metadata", return_value={"duration_seconds": 1200}),
+            patch("app.web.routes_pages.enqueue_pipeline_job") as mocked_enqueue,
+        ):
             response = self.client.post(
                 "/web/jobs/create",
                 data={"url": "https://www.youtube.com/watch?v=abc123def45"},
@@ -327,7 +374,9 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/jobs/1/view")
-        mocked_pipeline.assert_called_once_with(1)
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], 1)
+        self.assertEqual(mocked_enqueue.call_args.kwargs, {})
 
         db = self._session()
         try:
@@ -338,7 +387,11 @@ class RoutesTestCase(unittest.TestCase):
             db.close()
 
     def test_web_local_job_creation_redirects_and_runs_background_pipeline(self):
-        with patch("app.web.routes_pages.process_job_pipeline") as mocked_pipeline:
+        with (
+            patch("app.web.routes_pages.probe_video_duration_seconds", return_value=1200),
+            patch("app.web.routes_pages.enqueue_pipeline_job") as mocked_enqueue,
+            patch("app.web.routes_pages.settings.base_data_dir", str(self.test_artifacts_dir)),
+        ):
             response = self.client.post(
                 "/web/jobs/create-local",
                 data={"title": "Upload externo"},
@@ -348,7 +401,9 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/jobs/1/view")
-        mocked_pipeline.assert_called_once_with(1)
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], 1)
+        self.assertEqual(mocked_enqueue.call_args.kwargs, {})
 
         db = self._session()
         try:
@@ -360,6 +415,66 @@ class RoutesTestCase(unittest.TestCase):
             self.assertEqual(job.source_value, job.video_path)
         finally:
             db.close()
+
+    def test_web_job_creation_allows_single_trial_without_billing(self):
+        db = self._session()
+        try:
+            db.query(Subscription).delete()
+            db.commit()
+        finally:
+            db.close()
+
+        with (
+            patch("app.web.routes_pages.fetch_youtube_metadata", return_value={"duration_seconds": 1200}),
+            patch("app.web.routes_pages.enqueue_pipeline_job") as mocked_enqueue,
+        ):
+            response = self.client.post(
+                "/web/jobs/create",
+                data={"url": "https://www.youtube.com/watch?v=trial123"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/jobs/1/view")
+        mocked_enqueue.assert_called_once()
+
+    def test_web_job_creation_blocks_second_trial_without_billing(self):
+        db = self._session()
+        try:
+            db.query(Subscription).delete()
+            db.commit()
+        finally:
+            db.close()
+
+        self._create_job(status="done", title="Primeiro teste")
+
+        with patch("app.web.routes_pages.fetch_youtube_metadata", return_value={"duration_seconds": 1200}):
+            response = self.client.post(
+                "/web/jobs/create",
+                data={"url": "https://www.youtube.com/watch?v=second123"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/billing", response.headers["location"])
+
+    def test_web_job_creation_blocks_trial_video_longer_than_30_minutes(self):
+        db = self._session()
+        try:
+            db.query(Subscription).delete()
+            db.commit()
+        finally:
+            db.close()
+
+        with patch("app.web.routes_pages.fetch_youtube_metadata", return_value={"duration_seconds": 1860}):
+            response = self.client.post(
+                "/web/jobs/create",
+                data={"url": "https://www.youtube.com/watch?v=toolong123"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/billing", response.headers["location"])
 
     def test_job_detail_page_renders_pipeline_section(self):
         job = self._create_job(status="failed")
@@ -529,6 +644,20 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIn("Diagnóstico Operacional", response.text)
         self.assertIn("Checks do ambiente", response.text)
         self.assertIn("Configuração carregada", response.text)
+
+    def test_account_profile_page_renders_user_workspace_and_metrics(self):
+        job = self._create_job(status="done", title="Conta ativa")
+        self._create_candidate(job.id, status="approved")
+        self._create_clip(job.id)
+
+        response = self.client.get("/account")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Perfil da conta", response.text)
+        self.assertIn("Routes Workspace", response.text)
+        self.assertIn("Jobs no workspace", response.text)
+        self.assertIn("Candidatos aprovados", response.text)
+        self.assertIn("Clips gerados", response.text)
 
     def test_api_lists_niches_with_summary_counts(self):
         self._create_niche_definition(name="Financas Creator", slug="financas-creator", status="pending")
@@ -931,6 +1060,44 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
+    def test_render_approved_from_page_passes_burn_subtitles_when_checked(self):
+        job = self._create_job()
+        self._create_candidate(job.id, status="approved", start_time=10.0, end_time=70.0, duration=60.0)
+
+        with patch("app.web.routes_pages.render_candidate_clip") as mocked_render:
+            mocked_render.return_value = (Mock(), "C:/tmp/clip.ass", "C:/tmp/clip.mp4")
+            response = self.client.post(
+                f"/jobs/{job.id}/view/render-approved",
+                data={"mode": "short", "render_preset": "impact", "burn_subtitles": "true"},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        mocked_render.assert_called_once()
+        self.assertTrue(mocked_render.call_args.kwargs["burn_subtitles"])
+
+    def test_bulk_render_from_page_passes_burn_subtitles_when_checked(self):
+        job = self._create_job()
+        candidate = self._create_candidate(job.id, status="pending", start_time=10.0, end_time=70.0, duration=60.0)
+
+        with patch("app.web.routes_pages.render_candidate_clip") as mocked_render:
+            mocked_render.return_value = (Mock(), "C:/tmp/clip.ass", "C:/tmp/clip.mp4")
+            response = self.client.post(
+                f"/jobs/{job.id}/view/candidates/bulk",
+                data={
+                    "mode": "short",
+                    "bulk_action": "render",
+                    "candidate_ids": [candidate.id],
+                    "render_preset": "impact",
+                    "burn_subtitles": "true",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        mocked_render.assert_called_once()
+        self.assertTrue(mocked_render.call_args.kwargs["burn_subtitles"])
+
     def test_render_presets_endpoint_returns_available_presets(self):
         response = self.client.get("/jobs/render-presets")
 
@@ -953,6 +1120,10 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["clips"][0]["hashtags"], "#cortes #shorts")
         self.assertEqual(data["clips"][0]["suggested_filename"], "clip-sugerido.mp4")
         self.assertEqual(data["clips"][0]["publication_status"], "draft")
+        self.assertEqual(data["clips"][0]["publication"]["title"], "Titulo sugerido")
+        self.assertEqual(data["clips"][0]["publication"]["hashtags"], ["#cortes", "#shorts"])
+        self.assertEqual(data["clips"][0]["publication"]["status_label"], "Rascunho")
+        self.assertIn("Descricao curta", data["clips"][0]["publication"]["caption"])
 
     def test_export_job_bundle_returns_zip_response(self):
         job = self._create_job()
@@ -979,6 +1150,7 @@ class RoutesTestCase(unittest.TestCase):
                     "name": export_zip.name,
                     "path": str(export_zip),
                     "size_bytes": export_zip.stat().st_size,
+                    "created_at": datetime(2026, 4, 24, 12, 30, tzinfo=UTC),
                     "modified_at": datetime.now(UTC),
                 }
             ],
@@ -989,6 +1161,7 @@ class RoutesTestCase(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["total_exports"], 1)
         self.assertEqual(data["exports"][0]["name"], export_zip.name)
+        self.assertEqual(data["exports"][0]["created_at"], "2026-04-24T12:30:00+00:00")
         self.assertIn(f"/jobs/{job.id}/export/files/", data["exports"][0]["download_url"])
 
     def test_download_existing_export_returns_file(self):
@@ -1020,6 +1193,8 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["publication_status"], "ready")
+        self.assertEqual(response.json()["publication_status_label"], "Pronto")
+        self.assertEqual(response.json()["publication"]["status_label"], "Pronto")
 
         db = self._session()
         try:
@@ -1027,6 +1202,15 @@ class RoutesTestCase(unittest.TestCase):
             self.assertEqual(refreshed.publication_status, "ready")
         finally:
             db.close()
+
+    def test_update_clip_publication_status_rejects_invalid_status(self):
+        job = self._create_job()
+        clip = self._create_clip(job.id)
+
+        response = self.client.post(f"/jobs/clips/{clip.id}/publication", params={"status": "unknown"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Status de publicacao invalido")
 
     def test_home_filters_jobs_by_status(self):
         self._create_job(status="done", title="Finalizado")
@@ -1047,6 +1231,29 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Podcast de vendas", response.text)
         self.assertNotIn("Resumo financeiro", response.text)
+
+    def test_empty_dashboard_redirects_to_onboarding(self):
+        response = self.client.get("/dashboard", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/onboarding")
+
+    def test_onboarding_page_guides_first_job_creation(self):
+        response = self.client.get("/onboarding")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Primeiro processamento", response.text)
+        self.assertIn('action="/web/jobs/create"', response.text)
+        self.assertIn('action="/web/jobs/create-local"', response.text)
+        self.assertIn("Pronto", response.text)
+
+    def test_onboarding_redirects_to_first_job_after_creation(self):
+        job = self._create_job(status="pending", title="Primeiro job")
+
+        response = self.client.get("/onboarding", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view")
 
     def test_home_renders_dashboard_summary_cards(self):
         job_done = self._create_job(status="done", title="Com clip")
@@ -1079,9 +1286,9 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Aguardando slot livre", response.text)
-        self.assertIn('const dashboardMonitorEndpoint = "/jobs/dashboard/monitor";', response.text)
-        self.assertIn("refreshDashboardMonitor()", response.text)
-        self.assertIn('data-job-status-badge="', response.text)
+        self.assertIn('data-dashboard-monitor="/jobs/dashboard/monitor"', response.text)
+        self.assertIn('/assets/scripts/pages/dashboard.js', response.text)
+        self.assertIn("Na fila tecnica", response.text)
 
     def test_home_prioritizes_stale_queue_and_canceled_groups(self):
         stale_job = self._create_job(status="analyzing", title="Travado")
@@ -1254,7 +1461,9 @@ class RoutesTestCase(unittest.TestCase):
         self.assertNotIn('id="auto-refresh-toggle"', response.text)
 
     def test_job_detail_backfills_candidates_when_done_job_has_none(self):
-        job = self._create_job(status="done", transcript_path="C:/tmp/transcript.json", detected_niche="podcast")
+        transcript_path = self.test_artifacts_dir / "backfill_transcript.json"
+        transcript_path.write_text('{"text": "texto completo"}', encoding="utf-8")
+        job = self._create_job(status="done", transcript_path=str(transcript_path), detected_niche="podcast")
 
         db = self._session()
         try:
@@ -1377,10 +1586,19 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
+    def test_job_detail_renders_publication_status_label(self):
+        job = self._create_job(status="done")
+        self._create_clip(job.id, publication_status="ready")
+
+        response = self.client.get(f"/jobs/{job.id}/view")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Pronto", response.text)
+
     def test_retry_job_from_page_redirects_and_schedules_pipeline(self):
         job = self._create_job(status="failed")
 
-        with patch("app.web.routes_pages.process_job_pipeline") as mocked_pipeline:
+        with patch("app.web.routes_pages.enqueue_pipeline_job") as mocked_enqueue:
             response = self.client.post(
                 f"/jobs/{job.id}/view/retry",
                 data={},
@@ -1389,7 +1607,9 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view")
-        mocked_pipeline.assert_called_once_with(job.id, False)
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], job.id)
+        self.assertEqual(mocked_enqueue.call_args.kwargs, {"force": False})
 
         db = self._session()
         try:
@@ -1423,7 +1643,7 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
-        with patch("app.web.routes_pages.process_job_pipeline") as mocked_pipeline:
+        with patch("app.web.routes_pages.enqueue_pipeline_job") as mocked_enqueue:
             response = self.client.post(
                 f"/jobs/{job.id}/view/steps/transcribing/retry",
                 data={},
@@ -1432,7 +1652,12 @@ class RoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], f"/jobs/{job.id}/view")
-        mocked_pipeline.assert_called_once_with(job.id, False, "transcribing")
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], job.id)
+        self.assertEqual(
+            mocked_enqueue.call_args.kwargs,
+            {"force": False, "start_step": "transcribing"},
+        )
 
         db = self._session()
         try:
@@ -2326,6 +2551,33 @@ class RoutesTestCase(unittest.TestCase):
         self.assertGreaterEqual(chunks[1][0]["start"], 300.0)
         self.assertEqual(chunks[-1][-1]["end"], 1200.0)
 
+    def test_candidate_limits_follow_settings_by_mode(self):
+        with patch("app.services.candidates.settings") as mocked_settings:
+            mocked_settings.short_min_candidates_per_job = 14
+            mocked_settings.short_max_candidates_per_job = 55
+            mocked_settings.long_min_candidates_per_job = 4
+            mocked_settings.long_max_candidates_per_job = 18
+
+            self.assertEqual(_get_mode_candidate_limits("short"), (14, 55))
+            self.assertEqual(_get_mode_candidate_limits("long"), (4, 18))
+
+    def test_trial_candidate_limits_cap_short_and_long_outputs(self):
+        db = self._session()
+        try:
+            db.query(Subscription).delete()
+            db.commit()
+
+            self.assertEqual(
+                _get_mode_candidate_limits("short", db=db, workspace_id=self.workspace_id),
+                (0, 10),
+            )
+            self.assertEqual(
+                _get_mode_candidate_limits("long", db=db, workspace_id=self.workspace_id),
+                (0, 3),
+            )
+        finally:
+            db.close()
+
     def test_process_job_pipeline_persists_candidates_incrementally_by_chunk(self):
         job = self._create_job(
             status="pending",
@@ -2598,7 +2850,6 @@ class RoutesTestCase(unittest.TestCase):
                 side_effect=lambda value: value in {
                     "C:/tmp/existing_video.mp4",
                     "C:/tmp/existing_audio.mp3",
-                    "C:/tmp/recovered_transcript.json",
                 },
             ),
             patch("app.services.pipeline.transcribe_audio", return_value="C:/tmp/recovered_transcript.json"),
@@ -2639,7 +2890,7 @@ class RoutesTestCase(unittest.TestCase):
     def test_retry_job_endpoint_requeues_failed_job(self):
         job = self._create_job(status="failed")
 
-        with patch("app.api.routes_jobs.process_job_pipeline") as mocked_pipeline:
+        with patch("app.api.routes_jobs.enqueue_pipeline_job") as mocked_enqueue:
             response = self.client.post(f"/jobs/{job.id}/retry")
 
         self.assertEqual(response.status_code, 200)
@@ -2647,7 +2898,9 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(data["job_id"], job.id)
         self.assertEqual(data["status"], "pending")
         self.assertFalse(data["force"])
-        mocked_pipeline.assert_called_once_with(job.id, False)
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], job.id)
+        self.assertEqual(mocked_enqueue.call_args.kwargs, {"force": False})
 
         db = self._session()
         try:
@@ -2712,12 +2965,14 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
-        with patch("app.api.routes_jobs.process_job_pipeline") as mocked_pipeline:
+        with patch("app.api.routes_jobs.enqueue_pipeline_job") as mocked_enqueue:
             response = self.client.post(f"/jobs/{job.id}/retry", params={"force": "true"})
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["force"])
-        mocked_pipeline.assert_called_once_with(job.id, True)
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], job.id)
+        self.assertEqual(mocked_enqueue.call_args.kwargs, {"force": True})
 
     def test_cancel_job_endpoint_requests_cancellation(self):
         job = self._create_job(status="transcribing")
@@ -2784,14 +3039,19 @@ class RoutesTestCase(unittest.TestCase):
         finally:
             db.close()
 
-        with patch("app.api.routes_jobs.process_job_pipeline") as mocked_pipeline:
+        with patch("app.api.routes_jobs.enqueue_pipeline_job") as mocked_enqueue:
             response = self.client.post(f"/jobs/{job.id}/steps/transcribing/retry")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["step_name"], "transcribing")
         self.assertFalse(data["force"])
-        mocked_pipeline.assert_called_once_with(job.id, False, "transcribing")
+        mocked_enqueue.assert_called_once()
+        self.assertEqual(mocked_enqueue.call_args.args[1], job.id)
+        self.assertEqual(
+            mocked_enqueue.call_args.kwargs,
+            {"force": False, "start_step": "transcribing"},
+        )
 
         db = self._session()
         try:

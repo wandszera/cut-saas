@@ -8,6 +8,7 @@ from app.models.job import Job
 from app.services.clip_records import build_clip_record
 from app.services.clipping import render_clip
 from app.services.subtitles import generate_ass_for_clip
+from app.services.usage import record_render_usage
 
 
 def render_candidate_clip(
@@ -60,6 +61,8 @@ def render_candidate_clip(
         render_preset=render_preset,
     )
     db.add(clip)
+    db.flush()
+    record_render_usage(db, job, clip)
 
     if mark_candidate_rendered:
         candidate.status = "rendered"
@@ -116,6 +119,8 @@ def render_ranked_candidate_clip(
         render_preset=render_preset,
     )
     db.add(clip)
+    db.flush()
+    record_render_usage(db, job, clip)
     return clip, subtitles_path, output_path
 
 
@@ -171,4 +176,6 @@ def render_manual_clip(
         render_preset=render_preset,
     )
     db.add(clip)
+    db.flush()
+    record_render_usage(db, job, clip)
     return clip, subtitles_path, output_path

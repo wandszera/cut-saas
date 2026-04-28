@@ -6,12 +6,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_current_workspace
 from app.db.database import get_db
 from app.models.candidate import Candidate
 from app.models.clip import Clip
 from app.models.job import Job
 from app.models.job_step import JobStep
 from app.models.niche_keyword import NicheKeyword
+from app.models.workspace import Workspace
 from app.schemas.job import (
     AnalyzeRequest,
     CandidateNotesRequest,
@@ -23,6 +25,7 @@ from app.schemas.job import (
     RenderCandidateRequest,
     RenderRequest,
 )
+from app.services.access import ensure_workspace_can_create_job
 from app.services.candidates import get_candidates_for_job, regenerate_candidates_for_job
 from app.services.audio import extract_audio_from_video
 from app.services.exports import build_job_export_bundle, list_job_export_bundles
@@ -51,15 +54,22 @@ from app.services.pipeline import (
     MAX_STEP_ATTEMPTS,
     get_exhausted_steps,
     get_job_steps,
-    process_job_pipeline,
     request_job_cancellation,
     reset_pipeline_state_from_step,
     validate_step_name,
 )
+from app.services.publication import (
+    PUBLICATION_STATUS_LABELS,
+    build_clip_publication_package,
+    normalize_publication_status,
+)
+from app.services.queue import enqueue_pipeline_job
+from app.services.media import probe_video_duration_seconds
+from app.services.quota import ensure_workspace_can_start_job, get_workspace_quota_status
 from app.services.scoring import score_candidates
 from app.services.segmentation import build_candidate_windows, load_segments
 from app.services.transcription import transcribe_audio
-from app.services.youtube import download_youtube_media
+from app.services.youtube import download_youtube_media, fetch_youtube_metadata
 from app.utils.media_urls import build_static_url
 from app.utils.timecodes import parse_timecode_to_seconds
 from app.utils.runtime_env import detect_node
@@ -68,8 +78,11 @@ from app.utils.runtime_env import detect_node
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-def _get_job_or_404(db: Session, job_id: int) -> Job:
-    job = db.query(Job).filter(Job.id == job_id).first()
+def _get_job_or_404(db: Session, job_id: int, workspace: Workspace | None = None) -> Job:
+    query = db.query(Job).filter(Job.id == job_id)
+    if workspace is not None:
+        query = query.filter(Job.workspace_id == workspace.id)
+    job = query.first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
     return job
@@ -80,6 +93,38 @@ def _get_candidate_or_404(db: Session, candidate_id: int) -> Candidate:
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidato não encontrado")
     return candidate
+
+
+def _get_candidate_for_workspace_or_404(
+    db: Session,
+    candidate_id: int,
+    workspace: Workspace,
+) -> Candidate:
+    candidate = (
+        db.query(Candidate)
+        .join(Job, Candidate.job_id == Job.id)
+        .filter(Candidate.id == candidate_id, Job.workspace_id == workspace.id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidato nÃ£o encontrado")
+    return candidate
+
+
+def _get_clip_for_workspace_or_404(
+    db: Session,
+    clip_id: int,
+    workspace: Workspace,
+) -> Clip:
+    clip = (
+        db.query(Clip)
+        .join(Job, Clip.job_id == Job.id)
+        .filter(Clip.id == clip_id, Job.workspace_id == workspace.id)
+        .first()
+    )
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip nÃ£o encontrado")
+    return clip
 
 
 def _normalize_mode(mode: str) -> str:
@@ -118,9 +163,9 @@ def _get_ranked_candidates(db: Session, job: Job, mode: str) -> list[dict]:
     raw_segments = load_segments(job.transcript_path)
     candidates = build_candidate_windows(raw_segments, mode=mode)
     niche = job.detected_niche or "geral"
-    niche_profile = get_niche_profile(db, niche)
-    learned_keywords = get_learned_keywords_for_niche(db, niche)
-    feedback_profile = get_feedback_profile_for_niche(db, niche, mode)
+    niche_profile = get_niche_profile(db, niche, workspace_id=job.workspace_id)
+    learned_keywords = get_learned_keywords_for_niche(db, niche, workspace_id=job.workspace_id)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, mode, workspace_id=job.workspace_id)
     transcript_insights = json.loads(job.transcript_insights) if job.transcript_insights else None
     calibration_profile = build_analysis_calibration_profile(db, niche=niche, mode=mode)
     return score_candidates(
@@ -588,8 +633,12 @@ def get_analysis_calibration(mode: str = "short", niche: str | None = None, db: 
 
 
 @router.get("/niches")
-def get_niches(include_inactive: bool = True, db: Session = Depends(get_db)):
-    niches = list_niche_definitions(db, include_inactive=include_inactive)
+def get_niches(
+    include_inactive: bool = True,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    niches = list_niche_definitions(db, include_inactive=include_inactive, workspace_id=workspace.id)
     return {
         "total_niches": len(niches),
         "active_count": sum(1 for niche in niches if niche["status"] == "active"),
@@ -609,13 +658,26 @@ def get_dashboard_monitor(db: Session = Depends(get_db)):
     return _build_dashboard_monitor_payload(db)
 
 
+@router.get("/quota")
+def get_workspace_quota(
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    return get_workspace_quota_status(db, workspace.id).to_dict()
+
+
 @router.post("/niches")
-def create_niche(payload: NicheCreateRequest, db: Session = Depends(get_db)):
+def create_niche(
+    payload: NicheCreateRequest,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
         niche = create_pending_niche(
             db,
             name=payload.name,
             description=payload.description,
+            workspace_id=workspace.id,
         )
     except ValueError as exc:
         raise _niche_service_error(exc) from exc
@@ -627,9 +689,13 @@ def create_niche(payload: NicheCreateRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/niches/{slug}/approve")
-def approve_niche_endpoint(slug: str, db: Session = Depends(get_db)):
+def approve_niche_endpoint(
+    slug: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
-        niche = approve_niche(db, slug)
+        niche = approve_niche(db, slug, workspace_id=workspace.id)
     except ValueError as exc:
         raise _niche_service_error(exc) from exc
 
@@ -640,9 +706,13 @@ def approve_niche_endpoint(slug: str, db: Session = Depends(get_db)):
 
 
 @router.post("/niches/{slug}/reject")
-def reject_niche_endpoint(slug: str, db: Session = Depends(get_db)):
+def reject_niche_endpoint(
+    slug: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
-        niche = reject_niche(db, slug)
+        niche = reject_niche(db, slug, workspace_id=workspace.id)
     except ValueError as exc:
         raise _niche_service_error(exc) from exc
 
@@ -653,9 +723,13 @@ def reject_niche_endpoint(slug: str, db: Session = Depends(get_db)):
 
 
 @router.post("/niches/{slug}/archive")
-def archive_niche_endpoint(slug: str, db: Session = Depends(get_db)):
+def archive_niche_endpoint(
+    slug: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     try:
-        niche = archive_niche(db, slug)
+        niche = archive_niche(db, slug, workspace_id=workspace.id)
     except ValueError as exc:
         raise _niche_service_error(exc) from exc
 
@@ -666,8 +740,20 @@ def archive_niche_endpoint(slug: str, db: Session = Depends(get_db)):
 
 
 @router.post("/youtube", response_model=JobResponse)
-def create_youtube_job(payload: JobCreateYouTube, db: Session = Depends(get_db)):
+def create_youtube_job(
+    payload: JobCreateYouTube,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    metadata = fetch_youtube_metadata(str(payload.url))
+    ensure_workspace_can_start_job(db, workspace.id)
+    ensure_workspace_can_create_job(
+        db,
+        workspace.id,
+        duration_seconds=float(metadata.get("duration_seconds") or 0.0),
+    )
     job = Job(
+        workspace_id=workspace.id,
         source_type="youtube",
         source_value=str(payload.url),
         status="pending",
@@ -711,13 +797,24 @@ def create_youtube_job(payload: JobCreateYouTube, db: Session = Depends(get_db))
 
 
 @router.post("/local", response_model=JobResponse)
-def create_local_video_job(payload: JobCreateLocalVideo, db: Session = Depends(get_db)):
+def create_local_video_job(
+    payload: JobCreateLocalVideo,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    ensure_workspace_can_start_job(db, workspace.id)
     video_file = Path(payload.video_path).expanduser()
     if not video_file.exists() or not video_file.is_file():
         raise HTTPException(status_code=400, detail="video_path nao encontrado")
 
+    ensure_workspace_can_create_job(
+        db,
+        workspace.id,
+        duration_seconds=probe_video_duration_seconds(video_file),
+    )
     resolved_title = (payload.title or video_file.stem).strip() or video_file.stem
     job = Job(
+        workspace_id=workspace.id,
         source_type="local",
         source_value=str(video_file),
         status="pending",
@@ -758,8 +855,11 @@ def create_job_from_form(
     background_tasks: BackgroundTasks,
     url: str = Form(...),
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
+    ensure_workspace_can_start_job(db, workspace.id)
     job = Job(
+        workspace_id=workspace.id,
         source_type="youtube",
         source_value=url,
         status="pending",
@@ -768,7 +868,7 @@ def create_job_from_form(
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(process_job_pipeline, job.id)
+    enqueue_pipeline_job(background_tasks, job.id)
 
     return RedirectResponse(url=f"/jobs/{job.id}/view", status_code=303)
 
@@ -779,8 +879,9 @@ def retry_job(
     background_tasks: BackgroundTasks,
     force: bool = False,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
 
     if job.status not in {"failed", "pending"}:
         raise HTTPException(
@@ -802,7 +903,7 @@ def retry_job(
     job.error_message = None
     db.commit()
 
-    background_tasks.add_task(process_job_pipeline, job.id, force)
+    enqueue_pipeline_job(background_tasks, job.id, force=force)
 
     return {
         "message": "Reprocessamento agendado com sucesso",
@@ -816,8 +917,9 @@ def retry_job(
 def cancel_job(
     job_id: int,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
     request_job_cancellation(db, job)
     db.refresh(job)
     return {
@@ -834,8 +936,9 @@ def retry_job_step(
     background_tasks: BackgroundTasks,
     force: bool = False,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
     normalized_step = _normalize_pipeline_step(step_name)
 
     if job.status not in {"failed", "pending"}:
@@ -857,7 +960,7 @@ def retry_job_step(
         )
 
     reset_pipeline_state_from_step(db, job, normalized_step, reset_attempts=False)
-    background_tasks.add_task(process_job_pipeline, job.id, force, normalized_step)
+    enqueue_pipeline_job(background_tasks, job.id, force=force, start_step=normalized_step)
 
     return {
         "message": "Reprocessamento da etapa agendado com sucesso",
@@ -873,8 +976,9 @@ def reset_job_step(
     job_id: int,
     step_name: str,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
     normalized_step = _normalize_pipeline_step(step_name)
 
     reset_pipeline_state_from_step(db, job, normalized_step, reset_attempts=True)
@@ -889,8 +993,13 @@ def reset_job_step(
 
 
 @router.post("/{job_id}/render")
-def render_top_clips(job_id: int, payload: RenderRequest, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def render_top_clips(
+    job_id: int,
+    payload: RenderRequest,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     _ensure_job_ready_for_manual_render(job)
 
     mode = _normalize_mode(payload.mode)
@@ -941,9 +1050,13 @@ def render_top_clips(job_id: int, payload: RenderRequest, db: Session = Depends(
 
 
 @router.post("/niches/{niche}/learn-keywords")
-def learn_keywords_endpoint(niche: str, db: Session = Depends(get_db)):
+def learn_keywords_endpoint(
+    niche: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     niche = niche.lower().strip()
-    learned = learn_keywords_for_niche(db, niche=niche)
+    learned = learn_keywords_for_niche(db, niche=niche, workspace_id=workspace.id)
 
     return {
         "niche": niche,
@@ -964,11 +1077,16 @@ def learn_keywords_endpoint(niche: str, db: Session = Depends(get_db)):
 
 
 @router.get("/niches/{niche}/keywords")
-def list_keywords_by_niche(niche: str, db: Session = Depends(get_db)):
+def list_keywords_by_niche(
+    niche: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
     niche = niche.lower().strip()
     rows = (
         db.query(NicheKeyword)
         .filter(NicheKeyword.niche == niche)
+        .filter((NicheKeyword.workspace_id == workspace.id) | (NicheKeyword.workspace_id.is_(None)))
         .order_by(NicheKeyword.score.desc(), NicheKeyword.keyword.asc())
         .all()
     )
@@ -992,13 +1110,18 @@ def list_keywords_by_niche(niche: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}")
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def get_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     steps = get_job_steps(db, job.id)
     exhausted_steps = get_exhausted_steps(db, job.id)
 
     return {
         "id": job.id,
+        "workspace_id": job.workspace_id,
         "source_type": job.source_type,
         "source_value": job.source_value,
         "status": job.status,
@@ -1021,8 +1144,12 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/monitor")
-def get_job_monitor(job_id: int, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def get_job_monitor(
+    job_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     steps = get_job_steps(db, job.id)
     candidates_count = db.query(Candidate).filter(Candidate.job_id == job.id).count()
     clips_count = db.query(Clip).filter(Clip.job_id == job.id).count()
@@ -1048,11 +1175,16 @@ def get_job_monitor(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/feedback-profile")
-def get_job_feedback_profile(job_id: int, mode: str = "short", db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def get_job_feedback_profile(
+    job_id: int,
+    mode: str = "short",
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     normalized_mode = _normalize_mode(mode)
     niche = job.detected_niche or "geral"
-    feedback_profile = get_feedback_profile_for_niche(db, niche, normalized_mode)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, normalized_mode, workspace_id=job.workspace_id)
 
     return {
         "job_id": job.id,
@@ -1064,11 +1196,16 @@ def get_job_feedback_profile(job_id: int, mode: str = "short", db: Session = Dep
 
 
 @router.get("/{job_id}/ranking-insights")
-def get_job_ranking_insights(job_id: int, mode: str = "short", db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def get_job_ranking_insights(
+    job_id: int,
+    mode: str = "short",
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     normalized_mode = _normalize_mode(mode)
     niche = job.detected_niche or "geral"
-    feedback_profile = get_feedback_profile_for_niche(db, niche, normalized_mode)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, normalized_mode, workspace_id=job.workspace_id)
     candidates = get_candidates_for_job(db, job_id=job.id, mode=normalized_mode)
 
     return _build_ranking_insights_payload(
@@ -1084,12 +1221,13 @@ def recalibrate_job_feedback_profile(
     job_id: int,
     mode: str = "short",
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
     normalized_mode = _normalize_mode(mode)
     niche = (job.detected_niche or "geral").lower().strip()
-    learned = learn_keywords_for_niche(db, niche=niche)
-    feedback_profile = get_feedback_profile_for_niche(db, niche, normalized_mode)
+    learned = learn_keywords_for_niche(db, niche=niche, workspace_id=job.workspace_id)
+    feedback_profile = get_feedback_profile_for_niche(db, niche, normalized_mode, workspace_id=job.workspace_id)
 
     return {
         "message": "Aprendizado recalibrado com sucesso",
@@ -1103,13 +1241,18 @@ def recalibrate_job_feedback_profile(
 
 
 @router.post("/{job_id}/analyze")
-def analyze_job(job_id: int, payload: AnalyzeRequest, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def analyze_job(
+    job_id: int,
+    payload: AnalyzeRequest,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     if not job.transcript_path:
         raise HTTPException(status_code=400, detail="Job ainda não possui transcrição")
 
     mode = _normalize_mode(payload.mode)
-    feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", mode)
+    feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", mode, workspace_id=job.workspace_id)
     saved_candidates = regenerate_candidates_for_job(db, job, mode=mode)
 
     return {
@@ -1123,10 +1266,15 @@ def analyze_job(job_id: int, payload: AnalyzeRequest, db: Session = Depends(get_
 
 
 @router.get("/{job_id}/candidates")
-def list_candidates(job_id: int, mode: str = "short", db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def list_candidates(
+    job_id: int,
+    mode: str = "short",
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     mode = _normalize_mode(mode)
-    feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", mode)
+    feedback_profile = get_feedback_profile_for_niche(db, job.detected_niche or "geral", mode, workspace_id=job.workspace_id)
     candidates = get_candidates_for_job(db, job_id=job.id, mode=mode)
 
     return {
@@ -1145,8 +1293,9 @@ def render_candidate_by_id(
     candidate_id: int,
     burn_subtitles: bool = False,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
     candidate = (
         db.query(Candidate)
         .filter(Candidate.id == candidate_id, Candidate.job_id == job_id)
@@ -1188,8 +1337,13 @@ def render_candidate_by_id(
 
 
 @router.post("/{job_id}/render-candidate")
-def render_candidate(job_id: int, payload: RenderCandidateRequest, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def render_candidate(
+    job_id: int,
+    payload: RenderCandidateRequest,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     _ensure_job_ready_for_manual_render(job)
 
     mode = _normalize_mode(payload.mode)
@@ -1241,8 +1395,12 @@ def render_candidate(job_id: int, payload: RenderCandidateRequest, db: Session =
 
 
 @router.post("/candidates/{candidate_id}/approve")
-def approve_candidate(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = _get_candidate_or_404(db, candidate_id)
+def approve_candidate(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    candidate = _get_candidate_for_workspace_or_404(db, candidate_id, workspace)
 
     candidate.status = "approved"
     db.commit()
@@ -1257,8 +1415,12 @@ def approve_candidate(candidate_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/candidates/{candidate_id}/reject")
-def reject_candidate(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = _get_candidate_or_404(db, candidate_id)
+def reject_candidate(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    candidate = _get_candidate_for_workspace_or_404(db, candidate_id, workspace)
 
     candidate.status = "rejected"
     db.commit()
@@ -1273,8 +1435,12 @@ def reject_candidate(candidate_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/candidates/{candidate_id}/reset")
-def reset_candidate_status(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = _get_candidate_or_404(db, candidate_id)
+def reset_candidate_status(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    candidate = _get_candidate_for_workspace_or_404(db, candidate_id, workspace)
 
     candidate.status = "pending"
     db.commit()
@@ -1289,8 +1455,12 @@ def reset_candidate_status(candidate_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/candidates/{candidate_id}/favorite")
-def toggle_candidate_favorite(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = _get_candidate_or_404(db, candidate_id)
+def toggle_candidate_favorite(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    candidate = _get_candidate_for_workspace_or_404(db, candidate_id, workspace)
     candidate.is_favorite = not bool(candidate.is_favorite)
     db.commit()
     db.refresh(candidate)
@@ -1308,8 +1478,9 @@ def update_candidate_notes(
     candidate_id: int,
     payload: CandidateNotesRequest,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    candidate = _get_candidate_or_404(db, candidate_id)
+    candidate = _get_candidate_for_workspace_or_404(db, candidate_id, workspace)
     candidate.editorial_notes = payload.editorial_notes.strip() or None
     db.commit()
     db.refresh(candidate)
@@ -1323,8 +1494,13 @@ def update_candidate_notes(
 
 
 @router.get("/{job_id}/approved-candidates")
-def list_approved_candidates(job_id: int, mode: str = "short", db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def list_approved_candidates(
+    job_id: int,
+    mode: str = "short",
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     mode = _normalize_mode(mode)
 
     candidates = (
@@ -1354,8 +1530,9 @@ def render_approved_candidates(
     burn_subtitles: bool = False,
     render_preset: str = "clean",
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    job = _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id, workspace)
     _ensure_job_ready_for_render(job)
     mode = _normalize_mode(mode)
 
@@ -1406,8 +1583,13 @@ def render_approved_candidates(
 
 
 @router.post("/{job_id}/render-manual")
-def render_manual_clip(job_id: int, payload: ManualRenderRequest, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def render_manual_clip(
+    job_id: int,
+    payload: ManualRenderRequest,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     _ensure_job_ready_for_manual_render(job)
 
     mode = _normalize_mode(payload.mode)
@@ -1458,8 +1640,12 @@ def render_manual_clip(job_id: int, payload: ManualRenderRequest, db: Session = 
 
 
 @router.get("/{job_id}/clips")
-def list_rendered_clips(job_id: int, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def list_rendered_clips(
+    job_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
 
     clips = (
         db.query(Clip)
@@ -1480,8 +1666,12 @@ def list_rendered_clips(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/export")
-def export_job_bundle(job_id: int, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def export_job_bundle(
+    job_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     clips = (
         db.query(Clip)
         .filter(Clip.job_id == job_id)
@@ -1504,15 +1694,16 @@ def update_clip_publication_status(
     clip_id: int,
     status: str,
     db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
 ):
-    clip = db.query(Clip).filter(Clip.id == clip_id).first()
+    clip = _get_clip_for_workspace_or_404(db, clip_id, workspace)
     if not clip:
         raise HTTPException(status_code=404, detail="Clip não encontrado")
 
-    normalized_status = (status or "").strip().lower()
-    allowed_statuses = {"draft", "ready", "published", "discarded"}
-    if normalized_status not in allowed_statuses:
-        raise HTTPException(status_code=400, detail="Status de publicação inválido")
+    try:
+        normalized_status = normalize_publication_status(status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     clip.publication_status = normalized_status
     db.commit()
@@ -1522,32 +1713,44 @@ def update_clip_publication_status(
         "clip_id": clip.id,
         "job_id": clip.job_id,
         "publication_status": clip.publication_status,
+        "publication_status_label": PUBLICATION_STATUS_LABELS[clip.publication_status],
+        "publication": build_clip_publication_package(clip),
     }
 
 
 @router.get("/{job_id}/exports")
-def list_job_exports(job_id: int, db: Session = Depends(get_db)):
-    job = _get_job_or_404(db, job_id)
+def list_job_exports(
+    job_id: int,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    job = _get_job_or_404(db, job_id, workspace)
     exports = list_job_export_bundles(job.id)
     return {
         "job_id": job.id,
         "title": job.title,
         "total_exports": len(exports),
         "exports": [
-            {
-                "name": row["name"],
-                "size_bytes": row["size_bytes"],
-                "modified_at": row["modified_at"],
-                "download_url": f"/jobs/{job.id}/export/files/{row['name']}",
-            }
+                {
+                    "name": row["name"],
+                    "size_bytes": row["size_bytes"],
+                    "created_at": row.get("created_at"),
+                    "modified_at": row["modified_at"],
+                    "download_url": f"/jobs/{job.id}/export/files/{row['name']}",
+                }
             for row in exports
         ],
     }
 
 
 @router.get("/{job_id}/export/files/{filename}")
-def download_existing_export(job_id: int, filename: str, db: Session = Depends(get_db)):
-    _get_job_or_404(db, job_id)
+def download_existing_export(
+    job_id: int,
+    filename: str,
+    db: Session = Depends(get_db),
+    workspace: Workspace = Depends(require_current_workspace),
+):
+    _get_job_or_404(db, job_id, workspace)
     exports = {row["name"]: row for row in list_job_export_bundles(job_id)}
     target = exports.get(filename)
     if not target:

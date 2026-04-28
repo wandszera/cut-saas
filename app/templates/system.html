@@ -1,24 +1,23 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Status do Sistema - Cut SaaS</title>
+{% extends "base.html" %}
+
+{% block title %}Status do Sistema - Cut SaaS{% endblock %}
+
+{% block head %}
   <style>
     :root {
-      --panel: rgba(12, 22, 34, 0.82);
-      --line: rgba(157, 197, 224, 0.14);
-      --line-strong: rgba(157, 197, 224, 0.24);
-      --text: #eef5fb;
-      --muted: #8ea6ba;
-      --accent: #73f0c2;
-      --accent-2: #67b8ff;
-      --success: #95f2c8;
-      --danger: #ff9b9d;
-      --warn: #ffd37b;
-      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
-      --font-body: "Manrope", "Segoe UI", sans-serif;
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+      --panel: rgba(17, 17, 17, 0.9);
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(198, 255, 0, 0.22);
+      --text: var(--snow);
+      --muted: var(--ghost);
+      --accent: var(--acid);
+      --accent-2: var(--fire);
+      --success: #b7ff6b;
+      --danger: #ff8d73;
+      --warn: #ffe27a;
+      --font-display: var(--font-display);
+      --font-body: var(--font-body);
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
     }
 
     * { box-sizing: border-box; }
@@ -29,10 +28,9 @@
       color: var(--text);
       font-family: var(--font-body);
       background:
-        radial-gradient(circle at top left, rgba(103, 184, 255, 0.14), transparent 26%),
-        radial-gradient(circle at top right, rgba(255, 211, 123, 0.12), transparent 20%),
-        radial-gradient(circle at bottom right, rgba(115, 240, 194, 0.11), transparent 28%),
-        linear-gradient(180deg, #07121b 0%, #081018 100%);
+        radial-gradient(circle at top left, rgba(255, 59, 0, 0.12), transparent 22%),
+        radial-gradient(circle at top right, rgba(198, 255, 0, 0.08), transparent 26%),
+        linear-gradient(180deg, #090909 0%, #0f0f0f 100%);
       padding: 24px;
     }
 
@@ -47,10 +45,28 @@
       background: var(--panel);
       border: 1px solid var(--line);
       box-shadow: var(--shadow);
-      border-radius: 28px;
+      border-radius: 0;
       padding: 24px;
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
+    }
+
+    .hero-panel {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-panel::after {
+      content: "CF";
+      position: absolute;
+      right: -10px;
+      top: 48%;
+      transform: translateY(-50%);
+      font-family: var(--font-display);
+      font-size: min(24vw, 15rem);
+      line-height: 1;
+      color: rgba(255, 255, 255, 0.03);
+      pointer-events: none;
     }
 
     .hero {
@@ -61,14 +77,20 @@
 
     .eyebrow {
       display: inline-flex;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--warn);
-      font-size: 12px;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
       text-transform: uppercase;
-      letter-spacing: 0.16em;
+      letter-spacing: 0.18em;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: currentColor;
     }
 
     h1, h2, h3 {
@@ -78,14 +100,14 @@
 
     h1 {
       margin: 18px 0 12px;
-      font-size: clamp(38px, 5vw, 64px);
-      line-height: 0.95;
-      max-width: 720px;
+      font-size: clamp(4rem, 8vw, 6rem);
+      line-height: 0.88;
+      max-width: 12ch;
     }
 
     h2 {
       margin: 0 0 14px;
-      font-size: 28px;
+      font-size: clamp(2.4rem, 4vw, 3.6rem);
     }
 
     p {
@@ -107,12 +129,16 @@
       justify-content: center;
       min-height: 46px;
       padding: 0 16px;
-      border-radius: 999px;
+      border-radius: 0;
       text-decoration: none;
       color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
       font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       border: 1px solid var(--line-strong);
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.03);
     }
 
     .summary-grid,
@@ -136,9 +162,23 @@
 
     .card {
       padding: 18px;
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.04);
+      border-radius: 0;
+      background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255, 255, 255, 0.06);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::after {
+      content: "";
+      position: absolute;
+      right: 14px;
+      top: 14px;
+      width: 14px;
+      height: 14px;
+      border: 1px solid rgba(198, 255, 0, 0.18);
+      background: rgba(198, 255, 0, 0.05);
+      pointer-events: none;
     }
 
     .card strong {
@@ -157,18 +197,20 @@
       align-items: center;
       min-height: 34px;
       padding: 0 12px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 800;
+      border-radius: 0;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.12em;
       margin-bottom: 12px;
     }
 
-    .status-ok { background: rgba(149, 242, 200, 0.12); color: var(--success); border: 1px solid rgba(149, 242, 200, 0.16); }
-    .status-erro { background: rgba(255, 155, 157, 0.12); color: #ffd0d2; border: 1px solid rgba(255, 155, 157, 0.16); }
-    .status-configurado { background: rgba(103, 184, 255, 0.12); color: #b2dbff; border: 1px solid rgba(103, 184, 255, 0.16); }
-    .status-incompleto { background: rgba(255, 211, 123, 0.12); color: #ffe6b8; border: 1px solid rgba(255, 211, 123, 0.16); }
+    .status-ok { background: rgba(198, 255, 0, 0.12); color: var(--success); border: 1px solid rgba(198, 255, 0, 0.16); }
+    .status-erro { background: rgba(255, 59, 0, 0.12); color: #ffd7cd; border: 1px solid rgba(255, 59, 0, 0.16); }
+    .status-configurado { background: rgba(255, 255, 255, 0.08); color: var(--snow); border: 1px solid rgba(255, 255, 255, 0.12); }
+    .status-incompleto { background: rgba(255, 226, 122, 0.12); color: #ffe6b8; border: 1px solid rgba(255, 226, 122, 0.16); }
+    .status-pendente { background: rgba(255, 226, 122, 0.12); color: #ffe6b8; border: 1px solid rgba(255, 226, 122, 0.16); }
 
     .item-title {
       font-size: 20px;
@@ -190,6 +232,33 @@
       flex-wrap: wrap;
     }
 
+    .section-copy {
+      max-width: 520px;
+    }
+
+    .section-head p[style*="max-width"] {
+      max-width: 520px;
+    }
+
+    .next-steps {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .next-step {
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.025);
+      color: var(--text);
+    }
+
+    .card .detail > div {
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
     @media (max-width: 960px) {
       .hero,
       .summary-grid,
@@ -198,23 +267,71 @@
         grid-template-columns: 1fr;
       }
     }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 14px;
+      }
+
+      .shell {
+        gap: 14px;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      h1 {
+        margin: 14px 0 10px;
+        max-width: 10ch;
+        font-size: clamp(2.8rem, 14vw, 3.6rem);
+      }
+
+      h2 {
+        margin-bottom: 10px;
+        font-size: 2rem;
+      }
+
+      .top-actions {
+        justify-content: stretch;
+      }
+
+      .top-actions > * {
+        width: 100%;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .card strong {
+        font-size: 24px;
+      }
+
+      .item-title {
+        font-size: 18px;
+      }
+
+      .section-head {
+        margin-bottom: 12px;
+      }
+    }
   </style>
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
   <div class="shell">
     <section class="hero">
-      <div class="panel">
+      <div class="panel hero-panel">
         <div class="eyebrow">Diagnóstico Operacional</div>
-        <h1>Sua base está pronta para uso real?</h1>
+        <h1>Sua base esta pronta para uso real?</h1>
         <p>
-          Esta tela resume o estado do ambiente local, diretórios, banco, runtime e provider de IA para reduzir surpresa antes de operar o sistema no dia a dia.
+          Esta tela resume o estado do ambiente local, diretorios, banco, runtime e provider de IA para reduzir surpresa antes de operar o sistema no dia a dia.
         </p>
       </div>
       <div class="panel">
-        <div class="top-actions">
-          <a class="link" href="/">Voltar ao dashboard</a>
-          <a class="link" href="/nichos">Gerenciar nichos</a>
-        </div>
+        {% set active_page = "system" %}
+        {% include "partials/global_actions.html" %}
         <div style="margin-top: 18px;">
           {% if diagnostics.overall_ok %}
             <div class="status status-ok">Sistema pronto</div>
@@ -231,15 +348,15 @@
       <div class="summary-grid">
         <div class="card">
           <strong>{{ diagnostics.summary.checks_ok }}/{{ diagnostics.summary.checks_total }}</strong>
-          <span class="label">checks técnicos ok</span>
+          <span class="label">checks tecnicos ok</span>
         </div>
         <div class="card">
           <strong>{{ diagnostics.summary.directories_ok }}/{{ diagnostics.summary.directories_total }}</strong>
-          <span class="label">diretórios disponíveis</span>
+          <span class="label">diretorios disponiveis</span>
         </div>
         <div class="card">
           <strong>{{ diagnostics.settings_snapshot.whisper_model }}</strong>
-          <span class="label">modelo de transcrição</span>
+          <span class="label">modelo de transcricao</span>
         </div>
         <div class="card">
           <strong>{{ diagnostics.settings_snapshot.llm_provider }}</strong>
@@ -251,7 +368,7 @@
     <section class="panel">
       <div class="section-head">
         <h2>Checks do ambiente</h2>
-        <p style="max-width: 520px;">Estes itens indicam se a base técnica mínima está configurada para download, transcrição, análise e persistência.</p>
+        <p style="max-width: 520px;">Estes itens indicam se a base tecnica minima esta configurada para download, transcricao, analise e persistencia.</p>
       </div>
       <div class="checks-grid">
         {% for item in diagnostics.checks %}
@@ -266,8 +383,43 @@
 
     <section class="panel">
       <div class="section-head">
-        <h2>Diretórios</h2>
-        <p style="max-width: 520px;">Confirmação rápida da estrutura esperada para downloads, transcrições, clips, temporários, exports e uploads.</p>
+        <h2>Prontidao para staging</h2>
+        <p style="max-width: 520px;">Checklist operacional para validar se a aplicacao esta pronta para sair do modo local e rodar com Postgres, Alembic e worker separado.</p>
+      </div>
+      <div style="margin-bottom: 14px;">
+        {% if diagnostics.deployment_readiness.ready %}
+          <div class="status status-ok">Staging pronto</div>
+        {% else %}
+          <div class="status status-incompleto">Staging pendente</div>
+        {% endif %}
+        <p>
+          {{ diagnostics.deployment_readiness.checks_ok }}/{{ diagnostics.deployment_readiness.checks_total }}
+          checks atendidos para {{ diagnostics.deployment_readiness.target_environment }}.
+        </p>
+      </div>
+      <div class="checks-grid">
+        {% for item in diagnostics.deployment_readiness.checks %}
+        <article class="card">
+          <div class="status status-{{ item.status }}">{{ item.status }}</div>
+          <h3 class="item-title">{{ item.name }}</h3>
+          <div class="detail">{{ item.detail }}</div>
+        </article>
+        {% endfor %}
+      </div>
+      <div class="card" style="margin-top: 12px;">
+        <h3 class="item-title" style="font-size: 18px;">Proximos passos</h3>
+        <div class="detail">
+          {% for step in diagnostics.deployment_readiness.next_steps %}
+            <div>{{ step }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Diretorios</h2>
+        <p style="max-width: 520px;">Confirmacao rapida da estrutura esperada para downloads, transcricoes, clips, temporarios, exports e uploads.</p>
       </div>
       <div class="checks-grid">
         {% for item in diagnostics.directories %}
@@ -283,7 +435,7 @@
     <section class="panel">
       <div class="section-head">
         <h2>Configuração carregada</h2>
-        <p style="max-width: 520px;">Snapshot enxuto dos parâmetros principais em uso pelo backend neste momento.</p>
+        <p style="max-width: 520px;">Snapshot enxuto dos parametros principais em uso pelo backend neste momento.</p>
       </div>
       <div class="settings-grid">
         {% for key, value in diagnostics.settings_snapshot.items() %}
@@ -295,5 +447,4 @@
       </div>
     </section>
   </div>
-</body>
-</html>
+{% endblock %}

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.services.storage import get_storage, normalize_storage_key
 
 
 def _format_segment(segment: dict[str, Any]) -> dict[str, Any]:
@@ -29,10 +30,7 @@ def transcribe_audio(
     if not audio_file.exists():
         raise FileNotFoundError(f"Áudio não encontrado: {audio_file}")
 
-    transcripts_dir = Path(settings.base_data_dir) / "transcripts"
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = transcripts_dir / f"job_{job_id}.json"
+    output_path = get_storage().path_for(normalize_storage_key("transcripts", f"job_{job_id}.json"))
 
     try:
         import whisper

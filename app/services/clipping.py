@@ -1,8 +1,8 @@
 from pathlib import Path
 import subprocess
 
-from app.core.config import settings
 from app.services.render_presets import resolve_render_preset
+from app.services.storage import get_storage, normalize_storage_key
 
 
 def _escape_subtitles_path_for_ffmpeg(path: str) -> str:
@@ -70,8 +70,6 @@ def render_clip(
     if not video_file.exists():
         raise FileNotFoundError(f"Vídeo não encontrado: {video_file}")
 
-    clips_dir = Path(settings.base_data_dir) / "clips" / f"job_{job_id}"
-    clips_dir.mkdir(parents=True, exist_ok=True)
     preset_name, preset = resolve_render_preset(render_preset)
 
     suffix = f"_{mode}"
@@ -79,7 +77,9 @@ def render_clip(
         suffix += "_subtitled"
     suffix += f"_{preset_name}"
 
-    output_path = clips_dir / f"clip_{clip_index + 1}{suffix}.mp4"
+    output_path = get_storage().path_for(
+        normalize_storage_key("clips", f"job_{job_id}", f"clip_{clip_index + 1}{suffix}.mp4")
+    )
     duration = round(end - start, 2)
 
     command = [

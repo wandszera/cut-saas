@@ -1,6 +1,8 @@
 import json
 from typing import Any
 
+from app.core.config import settings
+
 
 def load_transcript(transcript_path: str) -> dict[str, Any]:
     with open(transcript_path, "r", encoding="utf-8") as f:
@@ -18,17 +20,17 @@ def get_mode_config(mode: str) -> dict[str, Any]:
     if mode == "long":
         return {
             "mode": "long",
-            "min_duration": 300.0,
+            "min_duration": settings.long_min_duration_seconds,
             "target_duration": 600.0,
-            "max_duration": 900.0,
+            "max_duration": settings.long_max_duration_seconds,
             "window_step_segments": 2,
         }
 
     return {
         "mode": "short",
-        "min_duration": 30.0,
+        "min_duration": settings.short_min_duration_seconds,
         "target_duration": 90.0,
-        "max_duration": 180.0,
+        "max_duration": settings.short_max_duration_seconds,
         "window_step_segments": 1,
     }
 
@@ -158,10 +160,22 @@ def _build_candidate(
 
 def deduplicate_candidates(
     candidates: list[dict[str, Any]],
-    time_tolerance: float = 8.0,
+    time_tolerance: float | None = None,
+    overlap_ratio_threshold: float | None = None,
 ) -> list[dict[str, Any]]:
     if not candidates:
         return []
+
+    normalized_time_tolerance = (
+        settings.candidate_duplicate_time_tolerance_seconds
+        if time_tolerance is None
+        else float(time_tolerance)
+    )
+    normalized_overlap_ratio = (
+        settings.candidate_duplicate_overlap_ratio
+        if overlap_ratio_threshold is None
+        else float(overlap_ratio_threshold)
+    )
 
     candidates = sorted(candidates, key=lambda x: (x["start"], x["end"]))
     filtered = []
@@ -175,9 +189,9 @@ def deduplicate_candidates(
             shorter = min(cand["duration"], kept["duration"]) or 1.0
             overlap_ratio = overlap / shorter
             if (
-                abs(cand["start"] - kept["start"]) <= time_tolerance
-                and abs(cand["end"] - kept["end"]) <= time_tolerance
-            ) or overlap_ratio >= 0.9:
+                abs(cand["start"] - kept["start"]) <= normalized_time_tolerance
+                and abs(cand["end"] - kept["end"]) <= normalized_time_tolerance
+            ) or overlap_ratio >= normalized_overlap_ratio:
                 is_duplicate = True
                 break
 

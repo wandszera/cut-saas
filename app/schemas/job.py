@@ -50,6 +50,7 @@ class NicheCreateRequest(BaseModel):
 
 class JobResponse(BaseModel):
     id: int
+    workspace_id: Optional[int] = None
     source_type: str
     source_value: str
     status: str

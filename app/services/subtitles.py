@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.render_presets import resolve_render_preset
+from app.services.storage import get_storage, normalize_storage_key
 
 
 def _format_ass_timestamp(seconds: float) -> str:
@@ -258,10 +259,9 @@ def generate_ass_for_clip(
     mode: str = "short",
     render_preset: str | None = None,
 ) -> str:
-    subtitles_dir = Path(settings.base_data_dir) / "subtitles" / f"job_{job_id}"
-    subtitles_dir.mkdir(parents=True, exist_ok=True)
-
-    ass_path = subtitles_dir / f"clip_{clip_index + 1}_{mode}.ass"
+    ass_path = get_storage().path_for(
+        normalize_storage_key("subtitles", f"job_{job_id}", f"clip_{clip_index + 1}_{mode}.ass")
+    )
 
     selected = _normalize_segments_for_clip(
         transcript_path=transcript_path,

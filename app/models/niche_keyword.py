@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from app.db.database import Base
 import re
@@ -14,6 +14,7 @@ class NicheKeyword(Base):
     __tablename__ = "niche_keywords"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True, index=True)
 
     niche = Column(String, nullable=False, index=True)
     keyword = Column(String, nullable=False, index=True)

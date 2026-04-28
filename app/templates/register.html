@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Criar Conta - Cut SaaS{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+  <main class="auth-shell">
+    <section class="auth-stage">
+      <div class="auth-stage-copy">
+        <a class="auth-brand" href="/">Clip<span>Forge</span></a>
+        <div class="auth-stage-kicker" style="margin-top: 1.4rem;">Criar workspace</div>
+        <h1>COMECE COM UMA BASE PRONTA PARA OPERAR.</h1>
+        <p>
+          Abra sua conta, monte seu workspace e leve ingestao, analise, render e export para um fluxo
+          <strong>mais previsivel e mais rapido</strong>.
+        </p>
+        <div class="auth-stage-metrics">
+          <div class="auth-stage-metric">
+            <strong>1 conta</strong>
+            <span>acesso centralizado</span>
+          </div>
+          <div class="auth-stage-metric">
+            <strong>1 workspace</strong>
+            <span>organizacao por time e contexto</span>
+          </div>
+          <div class="auth-stage-metric">
+            <strong>0 caos</strong>
+            <span>menos retrabalho operacional</span>
+          </div>
+        </div>
+      </div>
+      <div class="auth-stage-rail">
+        <div class="auth-stage-card">
+          <strong>Entrada rapida</strong>
+          <span>Crie sua conta e teste 1 video de ate 30 minutos antes de cadastrar qualquer cartao.</span>
+        </div>
+        <div class="auth-stage-card">
+          <strong>Base escalavel</strong>
+          <span>Auth, billing, quotas e storage privado ja entram no jogo desde o primeiro dia.</span>
+        </div>
+      </div>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-heading">
+        <span class="eyebrow">ClipForge</span>
+        <h1>Criar conta</h1>
+        <p>Preencha o basico. Depois do cadastro, voce pode testar 1 video de ate 30 minutos sem cobranca e sem cartao.</p>
+      </div>
+
+      {% if flash %}
+        <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+      {% endif %}
+
+      <form class="auth-form" action="/register" method="post">
+        <label>
+          Nome
+          <input type="text" name="display_name" autocomplete="name" />
+        </label>
+        <label>
+          Workspace
+          <input type="text" name="workspace_name" autocomplete="organization" />
+        </label>
+        <label>
+          Email
+          <input type="email" name="email" autocomplete="email" required />
+        </label>
+        <label>
+          Senha
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required />
+        </label>
+        <button type="submit">Criar conta</button>
+      </form>
+
+      <p class="auth-switch">
+        Ja tem conta? <a href="/login">Entrar</a>
+      </p>
+    </section>
+  </main>
+{% endblock %}

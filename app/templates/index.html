@@ -1,1418 +1,1939 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cut SaaS</title>
+{% extends "base.html" %}
+
+{% block title %}ClipForge - Destrua o algoritmo{% endblock %}
+{% block body_class %}landing-page clipforge-landing{% endblock %}
+
+{% block head %}
   <style>
-    :root {
-      --bg: #07111a;
-      --bg-soft: #0d1b27;
-      --panel: rgba(10, 20, 31, 0.78);
-      --panel-strong: rgba(12, 24, 37, 0.94);
-      --line: rgba(158, 196, 224, 0.16);
-      --line-strong: rgba(158, 196, 224, 0.26);
-      --text: #ecf4fb;
-      --muted: #8da3b7;
-      --accent: #73f0c2;
-      --accent-2: #67b8ff;
-      --accent-3: #ffd37b;
-      --danger: #ff8f94;
-      --success: #95f2c8;
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-      --radius-xl: 32px;
-      --radius-lg: 24px;
-      --radius-md: 18px;
-      --radius-sm: 14px;
-      --font-display: "Space Grotesk", "Segoe UI", sans-serif;
-      --font-body: "Manrope", "Segoe UI", sans-serif;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    html {
-      scroll-behavior: smooth;
-    }
-
-    body {
-      margin: 0;
+    .clipforge-landing .landing-shell {
+      gap: 0;
+      max-width: none;
       min-height: 100vh;
-      color: var(--text);
-      font-family: var(--font-body);
-      background:
-        radial-gradient(circle at top left, rgba(103, 184, 255, 0.18), transparent 28%),
-        radial-gradient(circle at 85% 12%, rgba(115, 240, 194, 0.12), transparent 22%),
-        radial-gradient(circle at bottom right, rgba(255, 211, 123, 0.12), transparent 28%),
-        linear-gradient(180deg, #08131d 0%, #071018 54%, #050b11 100%);
-      line-height: 1.55;
     }
 
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 32px 32px;
-      mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
-      opacity: 0.22;
+    .clipforge-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 1.25rem 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(198, 255, 0, 0.12);
+      background: rgba(10, 10, 10, 0.85);
+      backdrop-filter: blur(12px);
     }
 
-    .shell {
-      max-width: 1320px;
-      margin: 0 auto;
-      padding: 28px;
+    .clipforge-logo {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      letter-spacing: 0.08em;
+      color: var(--snow);
+      text-decoration: none;
+    }
+
+    .clipforge-logo span {
+      color: var(--acid);
+    }
+
+    .clipforge-nav-links {
+      list-style: none;
+      display: flex;
+      gap: 2.5rem;
+      margin: 0;
+      padding: 0;
+    }
+
+    .clipforge-nav-links a,
+    .clipforge-auth a {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ghost);
+      text-decoration: none;
+    }
+
+    .clipforge-nav-links a:hover,
+    .clipforge-auth a:hover {
+      color: var(--acid);
+    }
+
+    .clipforge-auth {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .clipforge-nav-cta {
+      padding: 0.7rem 1.4rem;
+      border: 1px solid var(--acid);
+      color: var(--acid) !important;
+      background: transparent;
+    }
+
+    .clipforge-nav-cta:hover {
+      background: var(--acid);
+      color: var(--void) !important;
+    }
+
+    .clipforge-hero {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      align-items: center;
+      gap: 2rem;
+      padding: 8rem 3rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .clipforge-hero-copy {
       position: relative;
       z-index: 1;
     }
 
-    .hero {
+    .clipforge-bg-number {
+      position: absolute;
+      right: -2rem;
+      top: 50%;
+      transform: translateY(-50%);
+      font-family: var(--font-display);
+      font-size: 40vw;
+      color: rgba(255, 255, 255, 0.025);
+      line-height: 1;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .clipforge-tag,
+    .clipforge-section-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--acid);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .clipforge-tag::before,
+    .clipforge-section-label::before {
+      content: "";
+      display: inline-block;
+      width: 2rem;
+      height: 1px;
+      background: var(--acid);
+    }
+
+    .clipforge-title {
+      font-family: var(--font-display);
+      font-size: clamp(5rem, 14vw, 13rem);
+      line-height: 0.88;
+      letter-spacing: 0.01em;
+      max-width: 14ch;
+      margin-bottom: 1rem;
+    }
+
+    .clipforge-title .slash {
+      color: var(--fire);
+      font-style: italic;
+    }
+
+    .clipforge-title .outline {
+      -webkit-text-stroke: 2px var(--snow);
+      color: transparent;
+    }
+
+    .clipforge-sub {
+      font-size: 1.1rem;
+      color: var(--ghost);
+      max-width: 42ch;
+      line-height: 1.6;
+      margin-bottom: 3rem;
+      font-weight: 400;
+    }
+
+    .clipforge-sub strong {
+      color: var(--snow);
+      font-weight: 700;
+    }
+
+    .clipforge-actions {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .clipforge-btn-primary {
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      letter-spacing: 0.1em;
+      padding: 1rem 3rem;
+      background: var(--acid);
+      color: var(--void);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+      text-decoration: none;
+      display: inline-block;
+      text-transform: uppercase;
+    }
+
+    .clipforge-btn-primary:hover {
+      background: #fff;
+      transform: translate(-2px, -2px);
+      color: var(--void);
+    }
+
+    .clipforge-btn-ghost {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ghost);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .clipforge-btn-ghost:hover {
+      color: var(--snow);
+    }
+
+    .clipforge-stats {
+      display: flex;
+      gap: 3rem;
+      margin-top: 1.5rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      flex-wrap: wrap;
+      grid-column: 1 / -1;
+    }
+
+    .clipforge-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .clipforge-stat-num {
+      font-family: var(--font-display);
+      font-size: 3rem;
+      line-height: 1;
+      color: var(--snow);
+    }
+
+    .clipforge-stat-num span {
+      color: var(--acid);
+    }
+
+    .clipforge-stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--ghost);
+    }
+
+    .clipforge-hero-stage {
+      position: relative;
+      min-height: 620px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .clipforge-stage-glow {
+      position: absolute;
+      inset: auto auto 12% 8%;
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(198, 255, 0, 0.18), transparent 72%);
+      filter: blur(16px);
+      pointer-events: none;
+    }
+
+    .clipforge-dashboard-preview {
+      width: min(100%, 560px);
+      background: rgba(17, 17, 17, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+      padding: 1.2rem;
+      position: relative;
+      transform: rotate(-4deg);
+      animation: clipforgeFloat 6s ease-in-out infinite;
+    }
+
+    .clipforge-dashboard-preview::before {
+      content: "LIVE PIPELINE";
+      position: absolute;
+      top: -12px;
+      left: 20px;
+      padding: 0.35rem 0.7rem;
+      background: var(--acid);
+      color: var(--void);
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .clipforge-preview-window {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .clipforge-preview-window span {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .clipforge-preview-window span:nth-child(1) {
+      background: rgba(255, 59, 0, 0.8);
+    }
+
+    .clipforge-preview-window span:nth-child(2) {
+      background: rgba(255, 226, 122, 0.85);
+    }
+
+    .clipforge-preview-window span:nth-child(3) {
+      background: rgba(198, 255, 0, 0.85);
+    }
+
+    .clipforge-preview-title {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      color: var(--acid);
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-status::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      background: var(--acid);
+      border-radius: 999px;
+      box-shadow: 0 0 0 0 rgba(198, 255, 0, 0.45);
+      animation: clipforge-pulse 1.8s ease infinite;
+    }
+
+    .clipforge-preview-grid {
       display: grid;
-      grid-template-columns: 1.35fr 0.95fr;
-      gap: 22px;
-      margin-bottom: 22px;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 1rem;
     }
 
-    .hero-panel,
-    .surface {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
+    .clipforge-preview-video {
+      position: relative;
+      min-height: 440px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        linear-gradient(180deg, rgba(255, 59, 0, 0.12), transparent 36%),
+        linear-gradient(180deg, #1d1d1d 0%, #101010 100%);
+      overflow: hidden;
     }
 
-    .hero-panel {
-      padding: 30px;
-      border-radius: var(--radius-xl);
+    .clipforge-preview-video::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 60% 18%, rgba(255, 255, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.28) 100%);
+    }
+
+    .clipforge-preview-frame {
+      position: absolute;
+      inset: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1rem;
+    }
+
+    .clipforge-preview-wave {
+      position: absolute;
+      left: 1rem;
+      right: 1rem;
+      bottom: 4.3rem;
+      height: 54px;
+      display: grid;
+      grid-template-columns: repeat(18, minmax(0, 1fr));
+      gap: 0.3rem;
+      align-items: end;
+      opacity: 0.9;
+    }
+
+    .clipforge-preview-wave span {
+      display: block;
+      background: linear-gradient(180deg, rgba(198, 255, 0, 0.95), rgba(255, 59, 0, 0.82));
+      min-height: 10px;
+      transform-origin: bottom;
+      animation: clipforgeWave 1.8s ease-in-out infinite;
+    }
+
+    .clipforge-preview-wave span:nth-child(2n) {
+      animation-delay: 0.2s;
+    }
+
+    .clipforge-preview-wave span:nth-child(3n) {
+      animation-delay: 0.35s;
+    }
+
+    .clipforge-preview-wave span:nth-child(4n) {
+      animation-delay: 0.5s;
+    }
+
+    .clipforge-preview-timeline {
+      position: absolute;
+      left: 1rem;
+      right: 1rem;
+      bottom: 1rem;
+      display: grid;
+      gap: 0.45rem;
+    }
+
+    .clipforge-preview-timeline-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.56rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-timeline-bar {
+      position: relative;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .clipforge-preview-timeline-bar::before {
+      content: "";
+      position: absolute;
+      left: 18%;
+      top: 0;
+      bottom: 0;
+      width: 46%;
+      background: linear-gradient(90deg, var(--fire), var(--acid));
+      animation: clipforgeTimelineDrift 3s ease-in-out infinite;
+    }
+
+    .clipforge-preview-badges {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .clipforge-preview-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 0.7rem;
+      background: rgba(10, 10, 10, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      color: var(--snow);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-caption {
+      display: grid;
+      gap: 0.55rem;
+      max-width: 92%;
+    }
+
+    .clipforge-preview-caption strong {
+      font-family: var(--font-display);
+      font-size: 2.2rem;
+      line-height: 0.92;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-caption span {
+      display: inline-block;
+      width: fit-content;
+      padding: 0.35rem 0.7rem;
+      background: rgba(198, 255, 0, 0.14);
+      border: 1px solid rgba(198, 255, 0, 0.22);
+      color: var(--acid);
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-rail {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .clipforge-preview-card {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 1rem;
+    }
+
+    .clipforge-preview-toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.55rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .clipforge-preview-toolbar-item {
+      min-height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.025);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.5rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-card-label {
+      display: block;
+      margin-bottom: 0.55rem;
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-metric {
+      font-family: var(--font-display);
+      font-size: 2.3rem;
+      line-height: 0.92;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-card p {
+      margin-top: 0.45rem;
+      color: var(--ghost);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .clipforge-preview-list {
+      display: grid;
+      gap: 0.7rem;
+    }
+
+    .clipforge-preview-list-item {
+      display: grid;
+      gap: 0.3rem;
+      padding: 0.85rem;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .clipforge-preview-list-item strong {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--snow);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-list-item span {
+      color: var(--ghost);
+      font-size: 0.8rem;
+    }
+
+    .clipforge-preview-stack {
+      display: grid;
+      gap: 0.8rem;
+    }
+
+    .clipforge-preview-mini-panel {
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(0, 0, 0, 0.22);
+      padding: 0.85rem;
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .clipforge-preview-mini-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .clipforge-preview-mini-head strong {
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      color: var(--snow);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-mini-head span {
+      font-family: var(--font-mono);
+      font-size: 0.54rem;
+      color: var(--acid);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-pipeline {
+      display: grid;
+      gap: 0.45rem;
+    }
+
+    .clipforge-preview-step {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 0.55rem;
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.56rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-preview-step-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    .clipforge-preview-step.is-done .clipforge-preview-step-dot {
+      background: var(--acid);
+    }
+
+    .clipforge-preview-step.is-live .clipforge-preview-step-dot {
+      background: var(--fire);
+      box-shadow: 0 0 0 0 rgba(255, 59, 0, 0.4);
+      animation: clipforge-pulse-fire 1.6s ease infinite;
+    }
+
+    .clipforge-preview-step-bar {
+      height: 5px;
+      background: rgba(255, 255, 255, 0.08);
       overflow: hidden;
       position: relative;
     }
 
-    .hero-panel::after {
+    .clipforge-preview-step-bar::before {
       content: "";
       position: absolute;
-      inset: auto -10% -20% auto;
-      width: 220px;
-      height: 220px;
-      border-radius: 999px;
-      background: radial-gradient(circle, rgba(115, 240, 194, 0.2), transparent 70%);
-      filter: blur(8px);
+      inset: 0 auto 0 0;
+      width: var(--progress, 0%);
+      background: linear-gradient(90deg, var(--fire), var(--acid));
+      animation: clipforgeProgressPulse 2.4s ease-in-out infinite;
     }
 
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 14px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      background: rgba(255, 255, 255, 0.04);
-      font-size: 12px;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--accent-3);
-    }
-
-    .hero-title {
-      margin: 18px 0 14px;
-      max-width: 760px;
-      font-family: var(--font-display);
-      font-size: clamp(40px, 6vw, 76px);
-      line-height: 0.95;
-      letter-spacing: -0.05em;
-    }
-
-    .hero-title span {
-      display: block;
-      color: var(--muted);
-      font-size: 0.52em;
-      letter-spacing: -0.04em;
-      margin-top: 14px;
-      line-height: 1.05;
-    }
-
-    .hero-copy {
-      max-width: 700px;
-      margin: 0 0 24px;
-      font-size: 16px;
-      color: #c6d7e6;
-    }
-
-    .hero-actions {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 26px;
-    }
-
-    .hero-link,
-    .ghost-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      min-height: 48px;
-      padding: 0 18px;
-      border-radius: 999px;
-      text-decoration: none;
-      font-weight: 700;
-      transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-    }
-
-    .hero-link {
-      color: #031018;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-      box-shadow: 0 16px 30px rgba(103, 184, 255, 0.22);
-    }
-
-    .ghost-link {
-      color: var(--text);
-      border: 1px solid var(--line-strong);
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    .hero-link:hover,
-    .ghost-link:hover,
-    button:hover,
-    .job-link:hover,
-    .chip-link:hover {
-      transform: translateY(-1px);
-    }
-
-    .hero-metrics {
+    .clipforge-preview-kpis {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
+      gap: 0.55rem;
     }
 
-    .metric {
-      padding: 16px;
-      border-radius: 18px;
+    .clipforge-preview-kpi {
       border: 1px solid rgba(255, 255, 255, 0.06);
       background: rgba(255, 255, 255, 0.03);
-    }
-
-    .metric strong {
-      display: block;
-      font-family: var(--font-display);
-      font-size: 30px;
-      margin-bottom: 6px;
-    }
-
-    .metric span {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .hero-side {
+      padding: 0.7rem;
       display: grid;
-      gap: 16px;
+      gap: 0.3rem;
     }
 
-    .auto-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 14px;
-      border-radius: 999px;
-      border: 1px solid rgba(115, 240, 194, 0.2);
-      background: rgba(115, 240, 194, 0.08);
-      color: #dff9ee;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
+    .clipforge-preview-kpi strong {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      line-height: 0.92;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
     }
 
-    .auto-pill::before {
-      content: "";
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      background: var(--accent);
-      box-shadow: 0 0 0 0 rgba(115, 240, 194, 0.45);
-      animation: livePulse 1.8s ease infinite;
+    .clipforge-preview-kpi span {
+      font-family: var(--font-mono);
+      font-size: 0.5rem;
+      color: var(--ghost);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
 
-    .refresh-countdown {
-      color: #dff9ee;
-      font-weight: 800;
-    }
-
-    .surface {
-      border-radius: var(--radius-lg);
-      padding: 22px;
-    }
-
-    .surface h2,
-    .surface h3 {
-      margin: 0 0 10px;
-      font-family: var(--font-display);
-      letter-spacing: -0.03em;
-    }
-
-    .surface p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .chip-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
-      border-radius: 999px;
-      border: 1px solid var(--line-strong);
-      color: var(--text);
-      text-decoration: none;
-      background: rgba(255, 255, 255, 0.04);
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    .form-shell {
+    .clipforge-preview-jobs {
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 22px;
-      margin-bottom: 22px;
+      gap: 0.55rem;
+      margin-top: 0.75rem;
     }
 
-    .stack {
+    .clipforge-preview-job {
       display: grid;
-      gap: 22px;
+      gap: 0.32rem;
+      padding: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.025);
     }
 
-    .section-title {
+    .clipforge-preview-job-head {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: flex-end;
-      gap: 16px;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-    }
-
-    .section-title h2 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: clamp(26px, 3vw, 34px);
-      letter-spacing: -0.04em;
-    }
-
-    .section-title p {
-      color: var(--muted);
-      margin: 0;
-      max-width: 560px;
-    }
-
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-
-    .kpi-card {
-      padding: 18px;
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .kpi-card strong {
-      display: block;
-      font-family: var(--font-display);
-      font-size: 34px;
-      margin-bottom: 4px;
-    }
-
-    .kpi-card span {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .board-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-
-    .ops-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-
-    .ops-card {
-      padding: 18px;
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.035);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .ops-card strong {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 13px;
-      letter-spacing: 0.08em;
+      gap: 0.6rem;
+      color: var(--snow);
+      font-family: var(--font-mono);
+      font-size: 0.54rem;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: #dce8f2;
     }
 
-    .ops-card p {
-      margin: 0 0 12px;
-      color: var(--muted);
-      font-size: 13px;
+    .clipforge-preview-job-head span:last-child {
+      color: var(--acid);
     }
 
-    .ops-card span {
-      display: inline-flex;
-      align-items: center;
-      min-height: 36px;
-      padding: 0 12px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 800;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .board-card {
-      padding: 20px;
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .board-card h3 {
-      margin: 0 0 12px;
-      font-family: var(--font-display);
-      font-size: 18px;
-    }
-
-    .board-item {
-      padding: 14px 0;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .board-item:first-child {
-      border-top: none;
-      padding-top: 0;
-    }
-
-    .board-item strong {
-      display: block;
-      margin-bottom: 6px;
-      color: var(--text);
-    }
-
-    .board-item p {
-      margin: 0 0 8px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    form {
+    .clipforge-preview-job p {
       margin: 0;
+      color: var(--ghost);
+      font-size: 0.72rem;
+      line-height: 1.45;
     }
 
-    .field-grid {
-      display: grid;
-      gap: 14px;
+    .clipforge-url-section,
+    .clipforge-section {
+      padding: 0 3rem 6rem;
     }
 
-    .field-row {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: end;
+    .clipforge-url-box {
+      background: var(--steel);
+      border: 1px solid rgba(198, 255, 0, 0.2);
+      padding: 2.5rem;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      max-width: 900px;
+      position: relative;
     }
 
-    label {
-      display: block;
-      margin-bottom: 8px;
-      color: #bfd0de;
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.01em;
+    .clipforge-url-box::before {
+      content: "COLE SEU LINK AQUI";
+      position: absolute;
+      top: -10px;
+      left: 1.5rem;
+      background: var(--void);
+      padding: 0 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      color: var(--acid);
     }
 
-    input,
-    select,
-    button {
-      font: inherit;
-      border-radius: 16px;
-      border: 1px solid var(--line-strong);
-      transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
-    }
-
-    input,
-    select {
-      width: 100%;
-      min-height: 52px;
-      padding: 0 16px;
-      color: var(--text);
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    input::placeholder {
-      color: #6d8295;
-    }
-
-    input:focus,
-    select:focus {
+    .clipforge-url-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--snow);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      padding: 0.75rem 0;
       outline: none;
-      border-color: rgba(115, 240, 194, 0.5);
-      background: rgba(255, 255, 255, 0.06);
     }
 
-    button {
-      min-height: 52px;
-      padding: 0 18px;
+    .clipforge-url-input::placeholder {
+      color: var(--ghost);
+    }
+
+    .clipforge-url-input:focus {
+      border-bottom-color: var(--acid);
+    }
+
+    .clipforge-url-submit {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+      padding: 0.85rem 2rem;
+      background: var(--fire);
+      color: var(--snow);
+      border: none;
       cursor: pointer;
-      font-weight: 800;
-      color: #041018;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-      box-shadow: 0 12px 24px rgba(103, 184, 255, 0.18);
+      white-space: nowrap;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+      text-transform: uppercase;
+      text-decoration: none;
     }
 
-    .secondary-button {
-      background: linear-gradient(135deg, var(--accent-3) 0%, #ffae73 100%);
-      color: #251200;
+    .clipforge-marquee-wrap,
+    .clipforge-ticker {
+      overflow: hidden;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      background: var(--smoke);
     }
 
-    .filter-bar {
-      display: grid;
-      grid-template-columns: minmax(220px, 280px) minmax(220px, 1fr) auto;
-      gap: 12px;
-      align-items: end;
-      margin-bottom: 18px;
+    .clipforge-marquee-wrap {
+      padding: 1rem 0;
+      margin-bottom: 6rem;
     }
 
-    .job-list {
-      display: grid;
-      gap: 14px;
-    }
-
-    .job-group {
-      display: grid;
-      gap: 14px;
-      margin-bottom: 22px;
-    }
-
-    .job-group-header {
+    .clipforge-marquee-track,
+    .clipforge-ticker-track {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 2rem;
+      animation: clipforge-marquee 18s linear infinite;
+      width: max-content;
     }
 
-    .job-group-header h3 {
-      margin: 0;
+    .clipforge-ticker {
+      background: var(--acid);
+      padding: 0.6rem 0;
+    }
+
+    .clipforge-ticker-track {
+      gap: 3rem;
+      animation-duration: 14s;
+    }
+
+    .clipforge-marquee-item {
       font-family: var(--font-display);
-      font-size: 18px;
-      letter-spacing: -0.03em;
-    }
-
-    .job-group-header span {
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .job-card {
-      padding: 22px;
-      border-radius: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02)),
-        rgba(7, 16, 24, 0.68);
-      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .job-card.needs-action {
-      border-color: rgba(255, 211, 123, 0.18);
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 0 0 1px rgba(255, 211, 123, 0.05);
-    }
-
-    .job-card.active-run {
-      border-color: rgba(103, 184, 255, 0.16);
-    }
-
-    .job-card.complete {
-      border-color: rgba(149, 242, 200, 0.14);
-    }
-
-    .job-card:hover {
-      transform: translateY(-2px);
-      border-color: rgba(115, 240, 194, 0.24);
-      box-shadow: 0 24px 50px rgba(0, 0, 0, 0.24);
-    }
-
-    .job-top {
+      font-size: 1.1rem;
+      letter-spacing: 0.2em;
+      color: var(--ghost);
+      white-space: nowrap;
       display: flex;
-      justify-content: space-between;
-      gap: 18px;
-      align-items: flex-start;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-
-    .job-title {
-      font-family: var(--font-display);
-      font-size: 24px;
-      line-height: 1.05;
-      margin: 0 0 8px;
-      letter-spacing: -0.04em;
-    }
-
-    .job-source {
-      margin: 0 0 10px;
-      color: #b9cad9;
-      font-size: 14px;
-      word-break: break-word;
-    }
-
-    .job-meta {
-      display: flex;
-      gap: 14px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .job-stage-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
       align-items: center;
-      margin-top: 10px;
+      gap: 2rem;
     }
 
-    .stage-chip,
-    .action-chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 34px;
-      padding: 0 12px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
+    .clipforge-marquee-item .sep {
+      color: var(--acid);
+      font-size: 1.5rem;
+    }
+
+    .clipforge-ticker-item {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
       text-transform: uppercase;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .stage-chip {
-      color: #d8ecff;
-      background: rgba(103, 184, 255, 0.08);
-    }
-
-    .action-chip {
-      color: #fff1c8;
-      background: rgba(255, 211, 123, 0.08);
-    }
-
-    .action-chip.action-danger {
-      color: #ffdadd;
-      background: rgba(255, 143, 148, 0.1);
-    }
-
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 40px;
-      padding: 0 14px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      border: 1px solid transparent;
+      letter-spacing: 0.15em;
+      color: var(--void);
       white-space: nowrap;
     }
 
-    .status-done {
-      background: rgba(149, 242, 200, 0.12);
-      color: var(--success);
-      border-color: rgba(149, 242, 200, 0.22);
+    @keyframes clipforge-marquee {
+      from { transform: translateX(0); }
+      to { transform: translateX(-50%); }
     }
 
-    .status-failed {
-      background: rgba(255, 143, 148, 0.12);
-      color: var(--danger);
-      border-color: rgba(255, 143, 148, 0.22);
+    @keyframes clipforge-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(198, 255, 0, 0.45); }
+      50% { box-shadow: 0 0 0 8px rgba(198, 255, 0, 0); }
     }
 
-    .status-active {
-      background: rgba(103, 184, 255, 0.12);
-      color: #9ad2ff;
-      border-color: rgba(103, 184, 255, 0.24);
-      animation: pulse 2.4s ease infinite;
+    @keyframes clipforge-pulse-fire {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 0, 0.42); }
+      50% { box-shadow: 0 0 0 8px rgba(255, 59, 0, 0); }
     }
 
-    @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(103, 184, 255, 0.18); }
-      50% { box-shadow: 0 0 0 10px rgba(103, 184, 255, 0); }
+    @keyframes clipforgeFloat {
+      0%, 100% { transform: rotate(-4deg) translateY(0); }
+      50% { transform: rotate(-4deg) translateY(-8px); }
     }
 
-    @keyframes livePulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(115, 240, 194, 0.45); }
-      50% { box-shadow: 0 0 0 8px rgba(115, 240, 194, 0); }
+    @keyframes clipforgeWave {
+      0%, 100% { transform: scaleY(0.92); opacity: 0.82; }
+      50% { transform: scaleY(1.12); opacity: 1; }
     }
 
-    .progress-wrap {
-      margin: 16px 0 0;
+    @keyframes clipforgeTimelineDrift {
+      0%, 100% { transform: translateX(0); opacity: 0.9; }
+      50% { transform: translateX(8px); opacity: 1; }
     }
 
-    .progress-label {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 8px;
+    @keyframes clipforgeProgressPulse {
+      0%, 100% { filter: brightness(0.95); }
+      50% { filter: brightness(1.12); }
     }
 
-    .progress-bar {
-      width: 100%;
-      height: 10px;
-      border-radius: 999px;
+    .clipforge-section {
+      padding-top: 6rem;
+    }
+
+    .clipforge-section-title {
+      font-family: var(--font-display);
+      font-size: clamp(3rem, 6vw, 6rem);
+      line-height: 0.92;
+      margin-bottom: 4rem;
+    }
+
+    .clipforge-steps,
+    .clipforge-pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
       background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .clipforge-step,
+    .clipforge-plan {
+      background: var(--void);
+      padding: 3rem 2.5rem;
+      position: relative;
       overflow: hidden;
     }
 
-    .progress-fill {
-      height: 100%;
-      border-radius: 999px;
-      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    .clipforge-step::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--acid);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.3s;
     }
 
-    .error-box {
-      margin-top: 16px;
-      padding: 14px 16px;
-      border-radius: 16px;
-      background: rgba(255, 143, 148, 0.08);
-      border: 1px solid rgba(255, 143, 148, 0.16);
-      color: #ffc1c5;
-      font-size: 13px;
+    .clipforge-step:hover::after {
+      transform: scaleX(1);
     }
 
-    .job-actions {
+    .clipforge-step-num {
+      position: absolute;
+      top: 1rem;
+      right: 1.5rem;
+      font-family: var(--font-display);
+      font-size: 5rem;
+      line-height: 1;
+      color: rgba(255, 255, 255, 0.04);
+    }
+
+    .clipforge-step-icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(198, 255, 0, 0.1);
+      border: 1px solid rgba(198, 255, 0, 0.2);
       display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 18px;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--acid);
+      text-transform: uppercase;
     }
 
-    .job-link {
+    .clipforge-step h3,
+    .clipforge-output-card h3 {
+      font-family: var(--font-body);
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 0 0 0.75rem;
+      letter-spacing: 0;
+      text-transform: none;
+      line-height: 1.2;
+    }
+
+    .clipforge-step p,
+    .clipforge-output-card p,
+    .clipforge-plan-features li {
+      font-size: 0.9rem;
+      color: var(--ghost);
+      line-height: 1.6;
+    }
+
+    .clipforge-outputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .clipforge-output-card {
+      background: var(--steel);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .clipforge-output-layout {
+      display: grid;
+      gap: 1.1rem;
+    }
+
+    .clipforge-output-proof {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 0.6rem;
+    }
+
+    .clipforge-output-proof-bar {
+      height: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .clipforge-output-proof-bar::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: var(--fill, 50%);
+      background: linear-gradient(90deg, var(--fire), var(--acid));
+    }
+
+    .clipforge-output-proof-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.56rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-output-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.6rem;
+      margin-top: 0.4rem;
+    }
+
+    .clipforge-output-mini-card {
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.7rem;
+      display: grid;
+      gap: 0.28rem;
+    }
+
+    .clipforge-output-mini-card strong {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      line-height: 0.92;
+    }
+
+    .clipforge-output-mini-card span {
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.5rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-output-stack {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    .clipforge-output-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      align-items: center;
+      padding: 0.75rem 0.8rem;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--snow);
+      font-family: var(--font-mono);
+      font-size: 0.56rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-output-line span:last-child {
+      color: var(--acid);
+    }
+
+    .clipforge-output-card.featured {
+      border-color: rgba(255, 59, 0, 0.3);
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .clipforge-output-badge {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      padding: 0.35rem 0.75rem;
+      background: rgba(198, 255, 0, 0.1);
+      color: var(--acid);
+      border: 1px solid rgba(198, 255, 0, 0.2);
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+
+    .clipforge-output-card.featured .clipforge-output-badge {
+      background: rgba(255, 59, 0, 0.1);
+      color: var(--fire);
+      border-color: rgba(255, 59, 0, 0.2);
+    }
+
+    .clipforge-output-card h3 {
+      font-family: var(--font-display);
+      font-size: 2.2rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 0.95;
+    }
+
+    .clipforge-phone {
+      width: 160px;
+      height: 280px;
+      background: var(--mist);
+      border-radius: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .clipforge-phone::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 59, 0, 0.2) 0%, transparent 60%);
+    }
+
+    .clipforge-phone-play {
+      width: 44px;
+      height: 44px;
+      border: 2px solid var(--snow);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      position: relative;
+      z-index: 1;
+      color: var(--snow);
+    }
+
+    .clipforge-plan.hot {
+      background: var(--smoke);
+      border: 1px solid rgba(198, 255, 0, 0.25);
+      margin: -1px;
+    }
+
+    .clipforge-plan.hot::before {
+      content: "MAIS POPULAR";
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--acid);
+      color: var(--void);
+      font-family: var(--font-mono);
+      font-size: 0.55rem;
+      letter-spacing: 0.2em;
+      padding: 0.3rem 1rem;
+      white-space: nowrap;
+    }
+
+    .clipforge-plan-name,
+    .clipforge-plan-price .period {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--ghost);
+    }
+
+    .clipforge-plan-price {
+      font-family: var(--font-display);
+      font-size: 4rem;
+      line-height: 1;
+      margin: 0.5rem 0 0.25rem;
+    }
+
+    .clipforge-plan-price sub {
+      font-size: 1.5rem;
+      vertical-align: baseline;
+    }
+
+    .clipforge-plan-highlight {
+      margin-top: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 0.7rem;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--snow);
+      font-family: var(--font-mono);
+      font-size: 0.54rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-plan-divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.06);
+      margin: 1.5rem 0;
+    }
+
+    .clipforge-plan-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      flex: 1;
+      margin: 0;
+      padding: 0;
+    }
+
+    .clipforge-plan-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+    }
+
+    .clipforge-plan-features li::before {
+      content: "->";
+      color: var(--acid);
+      font-size: 0.75rem;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+
+    .clipforge-plan-btn {
+      margin-top: 2rem;
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+      padding: 0.9rem 0;
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: transparent;
+      color: var(--snow);
+      cursor: pointer;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+      text-transform: uppercase;
+      text-decoration: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 44px;
-      padding: 0 16px;
-      border-radius: 999px;
-      border: 1px solid var(--line-strong);
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--text);
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 700;
     }
 
-    .empty-state {
-      padding: 40px 24px;
-      border-radius: 24px;
-      text-align: center;
-      color: var(--muted);
+    .clipforge-plan-btn:hover {
+      border-color: var(--snow);
+      background: var(--snow);
+      color: var(--void);
+    }
+
+    .clipforge-plan.hot .clipforge-plan-btn {
+      border-color: var(--acid);
+      color: var(--acid);
+    }
+
+    .clipforge-plan.hot .clipforge-plan-btn:hover {
+      background: var(--acid);
+      color: var(--void);
+    }
+
+    .clipforge-closing-band {
+      margin: 0 3rem 4rem;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        radial-gradient(circle at 85% 20%, rgba(198, 255, 0, 0.1), transparent 28%),
+        radial-gradient(circle at 8% 78%, rgba(255, 59, 0, 0.12), transparent 24%),
+        rgba(17, 17, 17, 0.9);
+      padding: 2.5rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .clipforge-closing-copy {
+      display: grid;
+      gap: 0.9rem;
+      max-width: 42rem;
+    }
+
+    .clipforge-closing-copy h2 {
+      font-family: var(--font-display);
+      font-size: clamp(2.6rem, 5vw, 4.8rem);
+      line-height: 0.92;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin: 0;
+    }
+
+    .clipforge-closing-copy p {
+      color: var(--ghost);
+      font-size: 1rem;
+      line-height: 1.7;
+      margin: 0;
+    }
+
+    .clipforge-closing-actions {
+      display: flex;
+      gap: 0.9rem;
+      flex-wrap: wrap;
+      margin-top: 0.4rem;
+    }
+
+    .clipforge-closing-rail {
+      display: grid;
+      gap: 0.8rem;
+    }
+
+    .clipforge-closing-stat {
+      border: 1px solid rgba(255, 255, 255, 0.08);
       background: rgba(255, 255, 255, 0.03);
-      border: 1px dashed rgba(255, 255, 255, 0.14);
+      padding: 1rem;
+      display: grid;
+      gap: 0.35rem;
     }
 
-    @media (max-width: 1080px) {
-      .hero,
-      .form-shell {
-        grid-template-columns: 1fr;
-      }
-
-      .kpi-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .board-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .ops-grid {
-        grid-template-columns: 1fr;
-      }
+    .clipforge-closing-stat strong {
+      font-family: var(--font-display);
+      font-size: 1.9rem;
+      line-height: 0.92;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
 
-    @media (max-width: 720px) {
-      .shell {
-        padding: 16px;
+    .clipforge-closing-stat span {
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.56rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .clipforge-footer p {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--ghost);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .clipforge-footer p:nth-of-type(n+3) {
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      .clipforge-nav {
+        padding: 1rem 1.25rem;
+        align-items: flex-start;
+        gap: 0.85rem;
       }
 
-      .hero-panel,
-      .surface,
-      .job-card {
-        padding: 18px;
+      .clipforge-nav-links {
+        display: none;
       }
 
-      .hero-title {
-        font-size: 40px;
-      }
-
-      .hero-metrics,
-      .kpi-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .field-row,
-      .filter-bar {
-        grid-template-columns: 1fr;
-      }
-
-      button,
-      .hero-link,
-      .ghost-link {
+      .clipforge-auth {
         width: 100%;
+        justify-content: space-between;
       }
 
-      .hero-actions,
-      .job-actions {
+      .clipforge-hero {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+        min-height: auto;
+        padding: 3.5rem 1.5rem 2rem;
+      }
+
+      .clipforge-hero-stage {
+        min-height: 360px;
+        align-items: flex-start;
+      }
+
+      .clipforge-dashboard-preview {
+        width: 100%;
+        transform: none;
+        animation: none;
+      }
+
+      .clipforge-title {
+        font-size: clamp(4rem, 24vw, 5.6rem);
+        max-width: 8ch;
+      }
+
+      .clipforge-sub {
+        margin-bottom: 2rem;
+      }
+
+      .clipforge-stats {
+        gap: 1.25rem 2rem;
+        margin-top: 0.5rem;
+        padding-top: 1.4rem;
+      }
+
+      .clipforge-stat {
+        min-width: 120px;
+      }
+
+      .clipforge-stat-num {
+        font-size: 2.35rem;
+      }
+
+      .clipforge-preview-video {
+        min-height: 320px;
+      }
+
+      .clipforge-preview-caption strong {
+        font-size: 1.7rem;
+      }
+
+      .clipforge-preview-metric {
+        font-size: 2rem;
+      }
+
+      .clipforge-section,
+      .clipforge-url-section {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+      }
+
+      .clipforge-preview-grid,
+      .clipforge-steps,
+      .clipforge-outputs,
+      .clipforge-output-card.featured,
+      .clipforge-pricing-grid {
+        grid-template-columns: 1fr;
+      }
+
+        .clipforge-url-box {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .clipforge-closing-band {
+          grid-template-columns: 1fr;
+          margin-left: 1.5rem;
+          margin-right: 1.5rem;
+          padding: 1.6rem;
+        }
+
+        .clipforge-url-submit,
+        .clipforge-btn-primary {
+          width: 100%;
+          text-align: center;
+        }
+
+      .clipforge-btn-primary {
+        font-size: 1.05rem;
+        padding: 0.95rem 1.4rem;
+      }
+
+      .clipforge-footer {
         flex-direction: column;
+        align-items: flex-start;
+        padding: 2rem 1.5rem;
       }
     }
   </style>
-</head>
-<body>
-  <div class="shell">
-    <section class="hero">
-      <div class="hero-panel">
-        <div class="eyebrow">Pipeline Editorial de Cortes</div>
-        <h1 class="hero-title">
-          Transforme vídeos longos em uma máquina de cortes publicáveis.
-          <span>Upload local, YouTube, análise automática, fila editorial, export e publicação em um único fluxo.</span>
+{% endblock %}
+
+{% block content %}
+  <main class="landing-shell">
+    <nav class="clipforge-nav">
+      <a class="clipforge-logo" href="/">Clip<span>Forge</span></a>
+      <ul class="clipforge-nav-links">
+        <li><a href="#como-funciona">Como funciona</a></li>
+        <li><a href="#outputs">Outputs</a></li>
+        <li><a href="#precos">Precos</a></li>
+      </ul>
+      <div class="clipforge-auth">
+        <a href="/login">Entrar</a>
+        <a href="/register" class="clipforge-nav-cta">Comecar gratis</a>
+      </div>
+    </nav>
+
+    <section class="clipforge-hero">
+      <div class="clipforge-bg-number">CF</div>
+      <div class="clipforge-hero-copy">
+        <div class="clipforge-tag">Automacao de conteudo | IA de corte agressivo</div>
+        <h1 class="clipforge-title">
+          DESTRUA<br>
+          O <span class="slash">ALGO-</span><br>
+          <span class="outline">RITMO</span>
         </h1>
-        <p class="hero-copy">
-          O painel foi redesenhado para parecer uma bancada de operação de conteúdo: tudo o que importa fica mais legível, mais rápido de escanear e mais agradável de usar no desktop e no mobile.
+        <p class="clipforge-sub">
+          Cole um link do YouTube. Em <strong>menos de 3 minutos</strong>, o motor encontra os melhores momentos,
+          corta automaticamente e entrega <strong>shorts virais + videos longos editados</strong> prontos para publicar.
         </p>
-        <div class="hero-actions">
-          <a class="hero-link" href="#novo-job">Novo processamento</a>
-          <a class="ghost-link" href="#jobs">Ver jobs recentes</a>
+        <div class="clipforge-actions">
+          <a href="/register" class="clipforge-btn-primary">Gerar meus clips agora</a>
+          <a href="/login" class="clipforge-btn-ghost">&gt; Ver painel ao vivo</a>
         </div>
-        <div class="hero-metrics">
-          <div class="metric">
-            <strong id="dashboard-total-jobs">{{ dashboard_summary.total_jobs }}</strong>
-            <span>Jobs monitorados</span>
+      </div>
+      <div class="clipforge-hero-stage" aria-hidden="true">
+        <div class="clipforge-stage-glow"></div>
+        <div class="clipforge-dashboard-preview">
+          <div class="clipforge-preview-top">
+            <div style="display: flex; align-items: center; gap: 0.8rem;">
+              <div class="clipforge-preview-window">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div class="clipforge-preview-title">Operator View</div>
+            </div>
+            <div class="clipforge-preview-status">Processando agora</div>
           </div>
-          <div class="metric">
-            <strong id="dashboard-jobs-with-clips">{{ dashboard_summary.jobs_with_clips }}</strong>
-            <span>Com clips gerados</span>
+          <div class="clipforge-preview-toolbar">
+            <div class="clipforge-preview-toolbar-item">Queue live</div>
+            <div class="clipforge-preview-toolbar-item">Short preset</div>
+            <div class="clipforge-preview-toolbar-item">Workspace pro</div>
           </div>
-          <div class="metric">
-            <strong id="dashboard-jobs-published">{{ dashboard_summary.jobs_published }}</strong>
-            <span>jobs já publicados</span>
+          <div class="clipforge-preview-grid">
+            <div class="clipforge-preview-video">
+              <div class="clipforge-preview-frame">
+                <div class="clipforge-preview-badges">
+                  <span class="clipforge-preview-badge">9:16 Viral Cut</span>
+                  <span class="clipforge-preview-badge">PT-BR Subtitle</span>
+                </div>
+                <div class="clipforge-preview-caption">
+                  <strong>Esse trecho segura audiencia ate o final</strong>
+                  <span>Gancho detectado | Score 94</span>
+                </div>
+              </div>
+              <div class="clipforge-preview-wave" aria-hidden="true">
+                <span style="height: 14px;"></span>
+                <span style="height: 26px;"></span>
+                <span style="height: 18px;"></span>
+                <span style="height: 42px;"></span>
+                <span style="height: 28px;"></span>
+                <span style="height: 48px;"></span>
+                <span style="height: 20px;"></span>
+                <span style="height: 38px;"></span>
+                <span style="height: 52px;"></span>
+                <span style="height: 24px;"></span>
+                <span style="height: 44px;"></span>
+                <span style="height: 18px;"></span>
+                <span style="height: 34px;"></span>
+                <span style="height: 50px;"></span>
+                <span style="height: 22px;"></span>
+                <span style="height: 36px;"></span>
+                <span style="height: 16px;"></span>
+                <span style="height: 30px;"></span>
+              </div>
+              <div class="clipforge-preview-timeline">
+                <div class="clipforge-preview-timeline-label">
+                  <span>Trecho marcado</span>
+                  <span>00:42 - 01:17</span>
+                </div>
+                <div class="clipforge-preview-timeline-bar"></div>
+              </div>
+            </div>
+            <div class="clipforge-preview-rail">
+              <div class="clipforge-preview-card">
+                <span class="clipforge-preview-card-label">Tempo ate primeiro corte</span>
+                <div class="clipforge-preview-metric">02:41</div>
+                <p>Da URL ao primeiro candidato aprovado com fila e analise rodando em paralelo.</p>
+              </div>
+              <div class="clipforge-preview-card">
+                <span class="clipforge-preview-card-label">Saidas prontas</span>
+                <div class="clipforge-preview-list">
+                  <div class="clipforge-preview-list-item">
+                    <strong>Short #01</strong>
+                    <span>Legenda animada + CTA final</span>
+                  </div>
+                  <div class="clipforge-preview-list-item">
+                    <strong>Longform Clean Cut</strong>
+                    <span>Silencios e hesitacoes removidos</span>
+                  </div>
+                  <div class="clipforge-preview-list-item">
+                    <strong>Pacote editorial</strong>
+                    <span>Titulo, descricao e hashtags</span>
+                  </div>
+                </div>
+              </div>
+              <div class="clipforge-preview-stack">
+                <div class="clipforge-preview-mini-panel">
+                  <div class="clipforge-preview-mini-head">
+                    <strong>Pipeline agora</strong>
+                    <span>worker-01</span>
+                  </div>
+                  <div class="clipforge-preview-pipeline">
+                    <div class="clipforge-preview-step is-done">
+                      <div class="clipforge-preview-step-dot"></div>
+                      <div>Download</div>
+                      <div>100%</div>
+                    </div>
+                    <div class="clipforge-preview-step-bar" style="--progress: 100%;"></div>
+                    <div class="clipforge-preview-step is-done">
+                      <div class="clipforge-preview-step-dot"></div>
+                      <div>Transcricao</div>
+                      <div>100%</div>
+                    </div>
+                    <div class="clipforge-preview-step-bar" style="--progress: 100%;"></div>
+                    <div class="clipforge-preview-step is-live">
+                      <div class="clipforge-preview-step-dot"></div>
+                      <div>Analise editorial</div>
+                      <div>72%</div>
+                    </div>
+                    <div class="clipforge-preview-step-bar" style="--progress: 72%;"></div>
+                  </div>
+                </div>
+                <div class="clipforge-preview-kpis">
+                  <div class="clipforge-preview-kpi">
+                    <strong>07</strong>
+                    <span>candidatos</span>
+                  </div>
+                  <div class="clipforge-preview-kpi">
+                    <strong>03</strong>
+                    <span>aprovados</span>
+                  </div>
+                  <div class="clipforge-preview-kpi">
+                    <strong>01</strong>
+                    <span>export live</span>
+                  </div>
+                </div>
+                <div class="clipforge-preview-jobs">
+                  <div class="clipforge-preview-job">
+                    <div class="clipforge-preview-job-head">
+                      <span>Job #184</span>
+                      <span>ready to render</span>
+                    </div>
+                    <p>Podcast de 48 min com 3 aprovados, 1 clip pronto e headline validada.</p>
+                  </div>
+                  <div class="clipforge-preview-job">
+                    <div class="clipforge-preview-job-head">
+                      <span>Job #185</span>
+                      <span>analysis live</span>
+                    </div>
+                    <p>Transcricao concluida. Motor editorial separando ganchos fortes e cortes de retencao.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      <div class="clipforge-stats">
+        <div class="clipforge-stat">
+          <span class="clipforge-stat-num">12<span>K+</span></span>
+          <span class="clipforge-stat-label">Criadores ativos</span>
+        </div>
+        <div class="clipforge-stat">
+          <span class="clipforge-stat-num">4.8<span>M</span></span>
+          <span class="clipforge-stat-label">Clips gerados</span>
+        </div>
+        <div class="clipforge-stat">
+          <span class="clipforge-stat-num">97<span>%</span></span>
+          <span class="clipforge-stat-label">Aprovacao dos usuarios</span>
+        </div>
+        <div class="clipforge-stat">
+          <span class="clipforge-stat-num">3<span>min</span></span>
+          <span class="clipforge-stat-label">Tempo medio de corte</span>
+        </div>
+      </div>
+    </section>
 
-      <div class="hero-side">
-        <section class="surface">
-          <div class="section-title" style="margin-bottom: 12px;">
+    <section class="clipforge-url-section">
+      <div class="clipforge-url-box">
+        <input class="clipforge-url-input" type="text" placeholder="https://youtube.com/watch?v=..." />
+        <a class="clipforge-url-submit" href="/register">Processar agora</a>
+      </div>
+    </section>
+
+    <div class="clipforge-marquee-wrap">
+      <div class="clipforge-marquee-track" id="clipforge-marquee"></div>
+    </div>
+
+    <div class="clipforge-ticker">
+      <div class="clipforge-ticker-track" id="clipforge-ticker"></div>
+    </div>
+
+    <section class="clipforge-section" id="como-funciona">
+      <div class="clipforge-section-label">Como funciona</div>
+      <h2 class="clipforge-section-title">TRES PASSOS.<br>ZERO FRICCAO.</h2>
+      <div class="clipforge-steps">
+        <div class="clipforge-step">
+          <div class="clipforge-step-num">01</div>
+          <div class="clipforge-step-icon">URL</div>
+          <h3>Cole o link</h3>
+          <p>Qualquer video do YouTube. Podcast, palestra, stream, entrevista ou aula longa entram no mesmo fluxo.</p>
+        </div>
+        <div class="clipforge-step">
+          <div class="clipforge-step-num">02</div>
+          <div class="clipforge-step-icon">AI</div>
+          <h3>IA processa</h3>
+          <p>O motor analisa ritmo, emocao, contexto e potencial de engajamento para puxar os momentos de maior corte.</p>
+        </div>
+        <div class="clipforge-step">
+          <div class="clipforge-step-num">03</div>
+          <div class="clipforge-step-icon">GO</div>
+          <h3>Exporta e domina</h3>
+          <p>Shorts 9:16 com legenda automatica e um longform mais limpo, prontos para YouTube, Reels e TikTok.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="clipforge-section" id="outputs" style="padding-top: 0;">
+      <div class="clipforge-section-label">O que voce recebe</div>
+      <h2 class="clipforge-section-title">CONTEUDO<br>SEM LIMITE.</h2>
+      <div class="clipforge-outputs">
+        <div class="clipforge-output-card featured">
+          <div class="clipforge-output-layout">
             <div>
-              <h2>Atalhos</h2>
-              <p>Entre nos fluxos de operação mais usados sem perder contexto.</p>
+            <span class="clipforge-output-badge">Mais pedido</span>
+            <h3>Shorts virais automaticos</h3>
+              <p>IA identifica picos de atencao e corta com precisao. Legendas animadas, 9:16 pronto e saida pensada para publicar sem retrabalho.</p>
+            </div>
+            <div class="clipforge-output-proof">
+              <div class="clipforge-output-proof-bar" style="--fill: 82%;"></div>
+              <div class="clipforge-output-proof-meta">
+                <span>Retencao prevista</span>
+                <span>82%</span>
+              </div>
+            </div>
+            <div class="clipforge-output-mini-grid">
+              <div class="clipforge-output-mini-card">
+                <strong>09:16</strong>
+                <span>formato vertical</span>
+              </div>
+              <div class="clipforge-output-mini-card">
+                <strong>Auto</strong>
+                <span>legenda queimada</span>
+              </div>
+              <div class="clipforge-output-mini-card">
+                <strong>1 Click</strong>
+                <span>pronto pra export</span>
+              </div>
             </div>
           </div>
-          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <a class="chip-link" href="/nichos">Gerenciar nichos</a>
-            <a class="chip-link" href="/system">Status do sistema</a>
-            <a class="chip-link" href="#publicacao">Painel de publicação</a>
-            <a class="chip-link" href="#jobs">Fila de jobs</a>
-          </div>
-        </section>
-
-        <section class="surface">
-          <h3>Visão do sistema</h3>
-          <p style="margin-bottom: 16px;">
-            O motor acompanha ingestão, transcrição, análise de nicho, geração de candidatos, renderização e export em um painel único.
-          </p>
-          <div class="kpi-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 0;">
-            <div class="kpi-card">
-              <strong id="dashboard-active-jobs">{{ dashboard_summary.active_jobs }}</strong>
-              <span>em andamento</span>
-            </div>
-            <div class="kpi-card">
-              <strong id="dashboard-jobs-with-exports">{{ dashboard_summary.jobs_with_exports }}</strong>
-              <span>Com export pronto</span>
-            </div>
-            <div class="kpi-card">
-              <strong id="pipeline-health-queued-jobs">{{ pipeline_health.queued_jobs }}</strong>
-              <span>na fila do motor</span>
-            </div>
-            <div class="kpi-card">
-              <strong id="pipeline-health-slowest-step-name">{% if pipeline_health.slowest_step_name %}{{ pipeline_health.slowest_step_name }}{% else %}--{% endif %}</strong>
-              <span id="pipeline-health-slowest-step-copy">{% if pipeline_health.slowest_step_seconds is not none %}etapa mais lenta ({{ pipeline_health.slowest_step_seconds }}s){% else %}sem historico suficiente{% endif %}</span>
+          <div style="display:flex; justify-content:center;">
+            <div class="clipforge-phone">
+              <div class="clipforge-phone-play">&gt;</div>
             </div>
           </div>
-        </section>
-      </div>
-    </section>
-
-    <section class="form-shell" id="novo-job">
-      <div class="surface">
-        <div class="section-title">
-          <div>
-            <h2>Novo processamento</h2>
-            <p>Crie um job a partir de um link do YouTube e acompanhe o pipeline completo.</p>
-          </div>
         </div>
-        <form method="post" action="/web/jobs/create" class="field-grid">
-          <div>
-            <label for="url">URL do vídeo</label>
-            <input id="url" type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required />
-          </div>
-          <div class="field-row">
-            <div></div>
-            <button type="submit">Processar vídeo</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="surface">
-        <div class="section-title">
-          <div>
-            <h2>Upload local</h2>
-            <p>Envie um arquivo do seu computador e deixe o sistema montar a análise automaticamente.</p>
-          </div>
-        </div>
-        <form method="post" action="/web/jobs/create-local" enctype="multipart/form-data" class="field-grid">
-          <div>
-            <label for="video_file">Arquivo de vídeo</label>
-            <input id="video_file" type="file" name="video_file" accept="video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v" required />
-          </div>
-          <div>
-            <label for="title">Título opcional</label>
-            <input id="title" type="text" name="title" placeholder="Nome interno para o job" />
-          </div>
-          <button class="secondary-button" type="submit">Selecionar e analisar vídeo</button>
-        </form>
-      </div>
-    </section>
-
-    <section class="surface" id="publicacao">
-      <div class="section-title">
-        <div>
-          <h2>Radar editorial</h2>
-          <p>Um resumo visual do que está pronto para publicar, do que já saiu e do que vale revisar antes de descartar.</p>
-        </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <strong>{{ dashboard_summary.total_jobs }}</strong>
-          <span>Jobs monitorados</span>
-        </div>
-        <div class="kpi-card">
-          <strong>{{ dashboard_summary.active_jobs }}</strong>
-          <span>em andamento</span>
-        </div>
-        <div class="kpi-card">
-          <strong>{{ dashboard_summary.jobs_with_approved }}</strong>
-          <span>Com aprovados pendentes</span>
-        </div>
-        <div class="kpi-card">
-          <strong>{{ dashboard_summary.jobs_ready_to_publish }}</strong>
-          <span>Prontos para publicar</span>
-        </div>
-      </div>
-
-      <div class="ops-grid">
-        <div class="ops-card">
-          <strong>Exige a??o agora</strong>
-          <p>Jobs com aprovados pendentes prontos para decis?o editorial ou render.</p>
-          <span id="ops-approved-pending">{{ dashboard_summary.jobs_with_approved }} fila(s) com decisao pendente</span>
-        </div>
-        <div class="ops-card">
-          <strong>Motor ativo</strong>
-          <p>Jobs ainda atravessando pipeline e que merecem acompanhamento ao vivo.</p>
-          <span id="ops-active-jobs">{{ dashboard_summary.active_jobs }} processamento(s) em andamento</span>
-        </div>
-        <div class="ops-card">
-          <strong>Fila tecnica</strong>
-          <p>Jobs saudaveis que ainda nao iniciaram processamento pesado porque o motor esta ocupado.</p>
-          <span id="ops-queued-jobs">{{ pipeline_health.queued_jobs }} aguardando vaga no motor</span>
-        </div>
-        <div class="ops-card">
-          <strong>Heartbeat envelhecido</strong>
-          <p>Etapas em execucao sem sinal recente de vida e que merecem verificacao imediata.</p>
-          <span id="ops-stale-running">{{ pipeline_health.stale_running_steps }} etapa(s) com heartbeat velho</span>
-        </div>
-        <div class="ops-card">
-          <strong>Falhas e cancelamentos</strong>
-          <p>Visao rapida de backlog operacional para decidir onde atacar primeiro.</p>
-          <span id="ops-failed-canceled">{{ pipeline_health.failed_jobs }} falha(s) / {{ pipeline_health.canceled_jobs }} cancelado(s)</span>
-        </div>
-        <div class="ops-card">
-          <strong>Pronto para publicar</strong>
-          <p>Materiais que j? t?m clip em status final e podem seguir para distribui??o.</p>
-          <span id="ops-ready-to-publish">{{ dashboard_summary.jobs_ready_to_publish }} job(s) liberados</span>
-        </div>
-      </div>
-
-      <div class="board-grid">
-        <div class="board-card">
-          <h3>Prontos para publicar</h3>
-          {% if publication_board.ready_jobs %}
-            {% for item in publication_board.ready_jobs %}
-            <div class="board-item">
-              <strong>#{{ item.job_id }} — {{ item.job_title }}</strong>
-              <p>{{ item.count }} clip(s) | {{ item.latest_headline }}</p>
-              <a class="job-link" href="/jobs/{{ item.job_id }}/view?clip_filter=ready">Abrir job</a>
+        <div class="clipforge-output-card">
+          <div class="clipforge-output-layout">
+            <div>
+              <span class="clipforge-output-badge">Novo</span>
+              <h3>Videos longos reeditados</h3>
+              <p>Remove silencios, hesitacoes e trechos lentos para entregar uma versao longa mais direta, limpa e publicavel.</p>
             </div>
-            {% endfor %}
-          {% else %}
-            <div class="empty-state" style="padding: 20px;">Nada pronto no momento.</div>
-          {% endif %}
-        </div>
-
-        <div class="board-card">
-          <h3>Publicados recentemente</h3>
-          {% if publication_board.published_jobs %}
-            {% for item in publication_board.published_jobs %}
-            <div class="board-item">
-              <strong>#{{ item.job_id }} — {{ item.job_title }}</strong>
-              <p>{{ item.count }} clip(s) | {{ item.latest_headline }}</p>
-              <a class="job-link" href="/jobs/{{ item.job_id }}/view?clip_filter=published">Abrir job</a>
+            <div class="clipforge-output-stack">
+              <div class="clipforge-output-line">
+                <span>Silencios removidos</span>
+                <span>-18%</span>
+              </div>
+              <div class="clipforge-output-line">
+                <span>Ritmo final</span>
+                <span>mais direto</span>
+              </div>
+              <div class="clipforge-output-line">
+                <span>Entrega</span>
+                <span>master limpo</span>
+              </div>
             </div>
-            {% endfor %}
-          {% else %}
-            <div class="empty-state" style="padding: 20px;">Nenhum publicado ainda.</div>
-          {% endif %}
+          </div>
         </div>
-
-        <div class="board-card">
-          <h3>Descartados</h3>
-          {% if publication_board.discarded_jobs %}
-            {% for item in publication_board.discarded_jobs %}
-            <div class="board-item">
-              <strong>#{{ item.job_id }} — {{ item.job_title }}</strong>
-              <p>{{ item.count }} clip(s) | {{ item.latest_headline }}</p>
-              <a class="job-link" href="/jobs/{{ item.job_id }}/view">Revisar job</a>
+        <div class="clipforge-output-card">
+          <div class="clipforge-output-layout">
+            <div>
+              <span class="clipforge-output-badge">Incluso</span>
+              <h3>Legendas automaticas</h3>
+              <p>Transcricao em multiplos idiomas, legenda queimada no video e base pronta para titulo, descricao e hashtags.</p>
             </div>
-            {% endfor %}
-          {% else %}
-            <div class="empty-state" style="padding: 20px;">Nenhum descartado.</div>
-          {% endif %}
+            <div class="clipforge-output-mini-grid">
+              <div class="clipforge-output-mini-card">
+                <strong>PT</strong>
+                <span>nativo</span>
+              </div>
+              <div class="clipforge-output-mini-card">
+                <strong>EN</strong>
+                <span>adaptado</span>
+              </div>
+              <div class="clipforge-output-mini-card">
+                <strong>ES</strong>
+                <span>publicavel</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="surface" id="jobs">
-      <div class="section-title">
-        <div>
-          <h2>Jobs recentes</h2>
-          <p>Um layout mais limpo para leitura rápida de progresso, falhas, origem do material e acesso às ações principais.</p>
+    <section class="clipforge-section" id="precos">
+      <div class="clipforge-section-label">Precos</div>
+      <h2 class="clipforge-section-title">SEM ENROLACAO.<br>ESCOLHA E VAI.</h2>
+      <div class="clipforge-pricing-grid">
+        <div class="clipforge-plan">
+          <div class="clipforge-plan-name">Starter</div>
+          <div class="clipforge-plan-price"><sub>R$</sub>47<span class="period"> /mes</span></div>
+          <div class="clipforge-plan-highlight">Primeiros 10 videos com fluxo completo</div>
+          <div class="clipforge-plan-divider"></div>
+          <ul class="clipforge-plan-features">
+            <li>10 videos por mes</li>
+            <li>Shorts automaticos</li>
+            <li>Legendas em 3 idiomas</li>
+            <li>Exportacao 1080p</li>
+            <li>Suporte via chat</li>
+          </ul>
+          <a class="clipforge-plan-btn" href="/register">Comecar</a>
+        </div>
+        <div class="clipforge-plan hot">
+          <div class="clipforge-plan-name">Pro</div>
+          <div class="clipforge-plan-price"><sub>R$</sub>127<span class="period"> /mes</span></div>
+          <div class="clipforge-plan-highlight">Melhor custo para operar volume semanal</div>
+          <div class="clipforge-plan-divider"></div>
+          <ul class="clipforge-plan-features">
+            <li>Videos ilimitados</li>
+            <li>Shorts + videos longos</li>
+            <li>IA de corte avancada</li>
+            <li>Exportacao 4K</li>
+            <li>Agendamento automatico</li>
+            <li>Suporte prioritario</li>
+          </ul>
+          <a class="clipforge-plan-btn" href="/register">Escolher Pro</a>
+        </div>
+        <div class="clipforge-plan">
+          <div class="clipforge-plan-name">Agency</div>
+          <div class="clipforge-plan-price"><sub>R$</sub>347<span class="period"> /mes</span></div>
+          <div class="clipforge-plan-highlight">Estrutura para time, clientes e escala</div>
+          <div class="clipforge-plan-divider"></div>
+          <ul class="clipforge-plan-features">
+            <li>10 usuarios inclusos</li>
+            <li>Tudo do Pro</li>
+            <li>API de integracao</li>
+            <li>White-label</li>
+            <li>Gerente de conta</li>
+            <li>SLA garantido</li>
+          </ul>
+          <a class="clipforge-plan-btn" href="/register">Falar com vendas</a>
         </div>
       </div>
-
-      <form method="get" action="/" class="filter-bar">
-        <div>
-          <label for="status_filter">Filtro de status</label>
-          <select id="status_filter" name="status_filter">
-            <option value="all" {% if status_filter == "all" %}selected{% endif %}>Todos</option>
-            <option value="active" {% if status_filter == "active" %}selected{% endif %}>Em andamento</option>
-            <option value="done" {% if status_filter == "done" %}selected{% endif %}>Conclu?dos</option>
-            <option value="failed" {% if status_filter == "failed" %}selected{% endif %}>Com falha</option>
-          </select>
-        </div>
-        <div>
-          <label for="search_query">Busca r?pida</label>
-          <input id="search_query" type="text" name="search_query" value="{{ search_query }}" placeholder="Buscar por t?tulo, fonte ou job" />
-        </div>
-        <button type="submit">Atualizar vis?o</button>
-      </form>
-
-      {% if recent_jobs %}
-        {% set stale_jobs = priority_groups.stale_jobs %}
-        {% set failed_jobs = priority_groups.failed_jobs %}
-        {% set queued_jobs = priority_groups.queued_jobs %}
-        {% set active_run_jobs = priority_groups.active_jobs %}
-        {% set action_jobs = priority_groups.completed_jobs %}
-        {% set canceled_jobs = priority_groups.canceled_jobs %}
-
-        <div class="job-list">
-          {% if stale_jobs %}
-          <section class="job-group">
-            <div class="job-group-header">
-              <h3>Possivel travamento</h3>
-              <span>{{ stale_jobs|length }} job(ns) sem heartbeat recente</span>
-            </div>
-            {% for job in stale_jobs %}
-            <article class="job-card">
-              <div class="job-top">
-                <div>
-                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
-                  <p class="job-source">{{ job.source_value }}</p>
-                  <div class="job-meta">
-                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
-                    {% if job.updated_at %}
-                    <span>Atualizado h? {{ (now - job.updated_at).total_seconds() | int }}s</span>
-                    {% endif %}
-                  </div>
-                  <div class="job-stage-row">
-                    <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip action-danger">Verificar heartbeat</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="status-badge status-failed">Aten??o</span>
-                </div>
-              </div>
-              {% if job.error_message %}
-              <div class="error-box">{{ job.error_message }}</div>
-              {% endif %}
-              <div class="job-actions">
-                <form method="post" action="/jobs/{{ job.id }}/view/retry">
-                  <button type="submit" class="ghost-button">Reprocessar job</button>
-                </form>
-                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
-              </div>
-            </article>
-            {% endfor %}
-          </section>
-          {% endif %}
-
-          {% if queued_jobs %}
-          <section class="job-group">
-            <div class="job-group-header">
-              <h3>Na fila tecnica</h3>
-              <span>{{ queued_jobs|length }} job(ns) aguardando slot</span>
-            </div>
-            {% for job in queued_jobs %}
-            <article class="job-card active-run">
-              <div class="job-top">
-                <div>
-                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
-                  <p class="job-source">{{ job.source_value }}</p>
-                  <div class="job-meta">
-                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
-                  </div>
-                  <div class="job-stage-row">
-                    <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip">Aguardando slot livre</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="status-badge status-active">{{ job.status_label }}</span>
-                </div>
-              </div>
-              {% if job.error_message %}
-              <div class="error-box">{{ job.error_message }}</div>
-              {% endif %}
-              <div class="job-actions">
-                <form method="post" action="/jobs/{{ job.id }}/view/retry">
-                  <button type="submit" class="ghost-button">Tentar agora</button>
-                </form>
-                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
-              </div>
-            </article>
-            {% endfor %}
-          </section>
-          {% endif %}
-
-          {% if action_jobs %}
-          <section class="job-group">
-            <div class="job-group-header">
-              <h3>Precisa de a??o</h3>
-              <span>{{ action_jobs|length }} job(ns) prontos para revis?o</span>
-            </div>
-            {% for job in action_jobs %}
-            <article class="job-card needs-action complete">
-              <div class="job-top">
-                <div>
-                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
-                  <p class="job-source">{{ job.source_value }}</p>
-                  <div class="job-meta">
-                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
-                    {% if job.status != "pending" %}
-                    <span>Atualizado h? {{ (now - job.updated_at).total_seconds() | int }}s</span>
-                    {% endif %}
-                  </div>
-                  <div class="job-stage-row">
-                    <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip">Pronto para revis?o</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="status-badge status-done">{{ job.status_label }}</span>
-                </div>
-              </div>
-              <div class="job-actions">
-                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
-                <a class="job-link" href="/jobs/{{ job.id }}/view?candidate_filter=approved">Ver candidatos</a>
-                <a class="job-link" href="/jobs/{{ job.id }}/view?clip_filter=short">Ver clips</a>
-                <a class="job-link" href="/jobs/{{ job.id }}/view?clip_filter=ready">Publica??o</a>
-              </div>
-            </article>
-            {% endfor %}
-          </section>
-          {% endif %}
-
-          {% if active_run_jobs %}
-          <section class="job-group">
-            <div class="job-group-header">
-              <h3>Em andamento</h3>
-              <span>{{ active_run_jobs|length }} job(ns) atravessando o pipeline</span>
-            </div>
-            {% for job in active_run_jobs %}
-            <article class="job-card active-run">
-              <div class="job-top">
-                <div>
-                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
-                  <p class="job-source">{{ job.source_value }}</p>
-                  <div class="job-meta">
-                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
-                    {% if job.status != "pending" %}
-                    <span>Atualizado h? {{ (now - job.updated_at).total_seconds() | int }}s</span>
-                    {% endif %}
-                  </div>
-                  <div class="job-stage-row">
-                    <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip" data-job-action-chip="{{ job.id }}">{% if job.status == "pending" and job.error_message and "Aguardando vaga na fila" in job.error_message %}Aguardando slot livre{% else %}Acompanhando pipeline{% endif %}</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="status-badge status-active" data-job-status-badge="{{ job.id }}">{{ job.status_label }}</span>
-                </div>
-              </div>
-              <div class="progress-wrap">
-                <div class="progress-label">
-                  <span>Progresso do pipeline</span>
-                  <span data-job-progress-label="{{ job.id }}">{{ job.progress_value or job.progress }}%</span>
-                </div>
-                <div class="progress-bar">
-                  <div class="progress-fill" data-job-progress-fill="{{ job.id }}" style="width: {{ job.progress_value or job.progress }}%;"></div>
-                </div>
-              </div>
-              {% if job.error_message %}
-              <div class="error-box" data-job-error-box="{{ job.id }}">{{ job.error_message }}</div>
-              {% endif %}
-              <div class="job-actions">
-                <form method="post" action="/jobs/{{ job.id }}/view/cancel">
-                  <input type="hidden" name="mode" value="short">
-                  <button type="submit" class="ghost-button">Cancelar processamento</button>
-                </form>
-                {% if job.status == "llm_enrichment" %}
-                <form method="post" action="/jobs/{{ job.id }}/view/analyze-without-llm">
-                  <input type="hidden" name="mode" value="short">
-                  <button type="submit" class="ghost-button">Concluir sem LLM</button>
-                </form>
-                {% endif %}
-                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
-              </div>
-            </article>
-            {% endfor %}
-          </section>
-          {% endif %}
-
-          {% if failed_jobs %}
-          <section class="job-group">
-            <div class="job-group-header">
-              <h3>Com falha</h3>
-              <span>{{ failed_jobs|length }} job(ns) exigem corre??o</span>
-            </div>
-            {% for job in failed_jobs %}
-            <article class="job-card">
-              <div class="job-top">
-                <div>
-                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
-                  <p class="job-source">{{ job.source_value }}</p>
-                  <div class="job-meta">
-                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
-                    {% if job.status != "pending" %}
-                    <span>Atualizado h? {{ (now - job.updated_at).total_seconds() | int }}s</span>
-                    {% endif %}
-                  </div>
-                  <div class="job-stage-row">
-                    <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip action-danger">Exige corre??o</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="status-badge status-failed">{{ job.status_label }}</span>
-                </div>
-              </div>
-              {% if job.error_message %}
-              <div class="error-box">{{ job.error_message }}</div>
-              {% endif %}
-              <div class="job-actions">
-                <form method="post" action="/jobs/{{ job.id }}/view/retry">
-                  <button type="submit" class="ghost-button">Reprocessar job</button>
-                </form>
-                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
-              </div>
-            </article>
-            {% endfor %}
-          </section>
-          {% endif %}
-
-          {% if canceled_jobs %}
-          <section class="job-group">
-            <div class="job-group-header">
-              <h3>Cancelados</h3>
-              <span>{{ canceled_jobs|length }} job(ns) encerrados manualmente</span>
-            </div>
-            {% for job in canceled_jobs %}
-            <article class="job-card">
-              <div class="job-top">
-                <div>
-                  <h3 class="job-title">#{{ job.id }} ? {{ job.title or "Sem t?tulo ainda" }}</h3>
-                  <p class="job-source">{{ job.source_value }}</p>
-                  <div class="job-meta">
-                    <span>Criado h? {{ (now - job.created_at).total_seconds() | int }}s</span>
-                  </div>
-                  <div class="job-stage-row">
-                    <span class="stage-chip">{{ job.status_label }}</span>
-                    <span class="action-chip">Encerrado pelo operador</span>
-                  </div>
-                </div>
-                <div>
-                  <span class="status-badge status-failed">{{ job.status_label }}</span>
-                </div>
-              </div>
-              <div class="job-actions">
-                <form method="post" action="/jobs/{{ job.id }}/view/retry">
-                  <button type="submit" class="ghost-button">Reprocessar job</button>
-                </form>
-                <a class="job-link" href="/jobs/{{ job.id }}/view">Abrir detalhes</a>
-              </div>
-            </article>
-            {% endfor %}
-          </section>
-          {% endif %}
-        </div>
-      {% else %}
-        <div class="empty-state">
-          Nenhum job ainda. Comece com um link do YouTube ou suba um vídeo local para ativar o pipeline.
-        </div>
-      {% endif %}
     </section>
-  </div>
-  {% if auto_refresh %}
+
+    <section class="clipforge-closing-band">
+      <div class="clipforge-closing-copy">
+        <div class="clipforge-section-label" style="margin-bottom: 0;">Pronto para operar</div>
+        <h2>PARE DE EDITAR NO BRACO. COMECE A PUBLICAR EM RITMO.</h2>
+        <p>
+          Se voce ja tem video longo, podcast, aula, entrevista ou stream, o gargalo nao e ideia. E transformar isso
+          em material aproveitavel com consistencia. O ClipForge existe para tirar esse atrito da operacao.
+        </p>
+        <div class="clipforge-closing-actions">
+          <a href="/register" class="clipforge-btn-primary">Criar workspace agora</a>
+          <a href="/login" class="clipforge-btn-ghost">&gt; Entrar na plataforma</a>
+        </div>
+      </div>
+      <div class="clipforge-closing-rail">
+        <div class="clipforge-closing-stat">
+          <strong>3 min</strong>
+          <span>tempo medio ate o primeiro corte</span>
+        </div>
+        <div class="clipforge-closing-stat">
+          <strong>1 fluxo</strong>
+          <span>ingestao, analise, render e export no mesmo lugar</span>
+        </div>
+        <div class="clipforge-closing-stat">
+          <strong>menos caos</strong>
+          <span>mais operacao editorial com previsibilidade</span>
+        </div>
+      </div>
+    </section>
+
+    <footer class="clipforge-footer">
+      <div class="clipforge-logo">Clip<span>Forge</span></div>
+      <p>&copy; 2026 ClipForge - Destruindo algoritmos desde o primeiro corte.</p>
+      <p>Feito para criadores e equipes que nao querem perder timing.</p>
+      <p>© 2026 ClipForge - Destruindo algoritmos desde o primeiro corte.</p>
+      <p>Feito para criadores que nao tem tempo a perder.</p>
+    </footer>
+  </main>
+{% endblock %}
+
+{% block scripts %}
   <script>
-    window.addEventListener("DOMContentLoaded", () => {
-      const dashboardMonitorEndpoint = "/jobs/dashboard/monitor";
-      const countdown = document.getElementById("refresh-countdown");
-      let remaining = 15;
+    const marqueeItems = [
+      "YouTube para Shorts", "Corte automatico com IA", "Legendas animadas",
+      "Videos longos reeditados", "TikTok em 3 minutos", "Zero edicao manual",
+      "Reels prontos para postar", "Podcast transformado em clips",
+    ];
+    const marqueeTrack = document.getElementById("clipforge-marquee");
+    if (marqueeTrack) {
+      const doubled = [...marqueeItems, ...marqueeItems];
+      marqueeTrack.innerHTML = doubled.map((text) =>
+        `<span class="clipforge-marquee-item">${text}<span class="sep">*</span></span>`
+      ).join("");
+    }
 
-      function setText(id, value) {
-        const element = document.getElementById(id);
-        if (!element) return;
-        element.textContent = String(value ?? "");
-      }
-
-      function setJobStatus(job) {
-        const statusBadge = document.querySelector(`[data-job-status-badge="${job.id}"]`);
-        const actionChip = document.querySelector(`[data-job-action-chip="${job.id}"]`);
-        const errorBox = document.querySelector(`[data-job-error-box="${job.id}"]`);
-        const progressLabel = document.querySelector(`[data-job-progress-label="${job.id}"]`);
-        const progressFill = document.querySelector(`[data-job-progress-fill="${job.id}"]`);
-
-        if (statusBadge) {
-          statusBadge.textContent = job.status_label || job.status || "";
-        }
-        if (actionChip) {
-          actionChip.textContent =
-            job.status === "pending" && String(job.error_message || "").startsWith("Aguardando vaga na fila")
-              ? "Aguardando slot livre"
-              : "Acompanhando pipeline";
-        }
-        if (errorBox) {
-          errorBox.textContent = job.error_message || "";
-          errorBox.style.display = job.error_message ? "" : "none";
-        }
-        if (progressLabel) {
-          progressLabel.textContent = `${Number(job.progress ?? 0)}%`;
-        }
-        if (progressFill) {
-          progressFill.style.width = `${Number(job.progress ?? 0)}%`;
-        }
-      }
-
-      async function refreshDashboardMonitor() {
-        const response = await fetch(dashboardMonitorEndpoint, { headers: { Accept: "application/json" } });
-        if (!response.ok) return;
-        const payload = await response.json();
-        const summary = payload.summary || {};
-        const health = payload.pipeline_health || {};
-
-        setText("dashboard-total-jobs", summary.total_jobs);
-        setText("dashboard-jobs-with-clips", summary.jobs_with_clips);
-        setText("dashboard-jobs-published", summary.jobs_published);
-        setText("dashboard-queued-jobs", summary.queued_jobs);
-        setText("dashboard-active-jobs", summary.active_jobs);
-        setText("dashboard-jobs-with-exports", summary.jobs_with_exports);
-        setText("pipeline-health-queued-jobs", health.jobs ? health.jobs.queued : "");
-        setText("ops-active-jobs", `${summary.active_jobs ?? 0} processamento(s) em andamento`);
-        setText("ops-queued-jobs", `${health.jobs ? health.jobs.queued : 0} aguardando vaga no motor`);
-        setText("ops-stale-running", `${health.steps ? health.steps.stale_running : 0} etapa(s) com heartbeat velho`);
-        setText("ops-failed-canceled", `${health.jobs ? health.jobs.failed : 0} falha(s) / ${health.jobs ? health.jobs.canceled : 0} cancelado(s)`);
-        setText("ops-ready-to-publish", `${summary.jobs_ready_to_publish ?? 0} job(s) liberados`);
-        const approvedPending = document.getElementById("ops-approved-pending");
-        if (approvedPending) {
-          approvedPending.textContent = `${payload.summary?.jobs_with_approved ?? 0} fila(s) com decisao pendente`;
-        }
-
-        const slowestName = document.getElementById("pipeline-health-slowest-step-name");
-        if (slowestName) {
-          const averageDurations = health.steps?.average_duration_seconds || {};
-          const entries = Object.entries(averageDurations);
-          if (entries.length) {
-            entries.sort((a, b) => Number(b[1]) - Number(a[1]));
-            slowestName.textContent = entries[0][0];
-            setText("pipeline-health-slowest-step-copy", `etapa mais lenta (${entries[0][1]}s)`);
-          } else {
-            slowestName.textContent = "--";
-            setText("pipeline-health-slowest-step-copy", "sem historico suficiente");
-          }
-        }
-
-        for (const job of payload.jobs || []) {
-          setJobStatus(job);
-        }
-      }
-
-      const tick = () => {
-        if (countdown) {
-          countdown.textContent = `${remaining}s`;
-        }
-        if (remaining <= 0) {
-          refreshDashboardMonitor().catch(() => {});
-          remaining = 15;
-          return;
-        }
-        remaining -= 1;
-      };
-      tick();
-      window.setInterval(tick, 1000);
-    });
+    const tickerItems = [
+      "Novo: suporte a Twitch VODs",
+      "+3.200 shorts criados hoje",
+      "Integracao com CapCut disponivel",
+      "API publica em beta",
+      "Gratis para testar",
+    ];
+    const tickerTrack = document.getElementById("clipforge-ticker");
+    if (tickerTrack) {
+      const tripled = [...tickerItems, ...tickerItems, ...tickerItems];
+      tickerTrack.innerHTML = tripled.map((text) =>
+        `<span class="clipforge-ticker-item">${text}</span>`
+      ).join("");
+    }
   </script>
-  {% endif %}
-</body>
-</html>
+{% endblock %}

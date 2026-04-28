@@ -37,17 +37,17 @@ def learn_keywords_for_niche(
     min_candidate_score: float = 8.0,
     min_occurrences: int = 3,
     min_distinct_jobs: int = 2,
+    workspace_id: int | None = None,
 ):
     if niche == "geral":
         return []
 
-    candidates = (
-        db.query(Candidate)
-        .filter(
-            Candidate.score >= min_candidate_score
-        )
-        .all()
+    query = db.query(Candidate).join(Job, Candidate.job_id == Job.id).filter(
+        Candidate.score >= min_candidate_score
     )
+    if workspace_id is not None:
+        query = query.filter(Job.workspace_id == workspace_id)
+    candidates = query.all()
 
     niche_candidates = [c for c in candidates if c.reason and c.full_text and niche]
 
@@ -78,6 +78,7 @@ def learn_keywords_for_niche(
             .filter(
                 NicheKeyword.niche == niche,
                 NicheKeyword.keyword == keyword,
+                NicheKeyword.workspace_id == workspace_id,
             )
             .first()
         )
@@ -91,6 +92,7 @@ def learn_keywords_for_niche(
         else:
             nk = NicheKeyword(
                 niche=niche,
+                workspace_id=workspace_id,
                 keyword=keyword,
                 score=score,
                 occurrences=occurrences,
@@ -105,16 +107,22 @@ def learn_keywords_for_niche(
     return learned
 
 
-def get_learned_keywords_for_niche(db: Session, niche: str) -> list[str]:
-    rows = (
-        db.query(NicheKeyword)
-        .filter(
-            NicheKeyword.niche == niche,
-            NicheKeyword.status == "active",
-        )
-        .order_by(NicheKeyword.score.desc())
-        .all()
+def get_learned_keywords_for_niche(
+    db: Session,
+    niche: str,
+    workspace_id: int | None = None,
+) -> list[str]:
+    query = db.query(NicheKeyword).filter(
+        NicheKeyword.niche == niche,
+        NicheKeyword.status == "active",
     )
+    if workspace_id is not None:
+        query = query.filter(
+            (NicheKeyword.workspace_id == workspace_id) | (NicheKeyword.workspace_id.is_(None))
+        )
+    else:
+        query = query.filter(NicheKeyword.workspace_id.is_(None))
+    rows = query.order_by(NicheKeyword.score.desc()).all()
     return [row.keyword for row in rows]
 
 
@@ -204,19 +212,22 @@ def get_feedback_profile_for_niche(
     mode: str,
     *,
     min_samples: int = 2,
+    workspace_id: int | None = None,
 ) -> dict:
     niche = (niche or "geral").lower().strip()
     mode = (mode or "short").lower().strip()
 
-    rows = (
+    query = (
         db.query(Candidate, Job)
         .join(Job, Candidate.job_id == Job.id)
         .filter(
             Candidate.mode == mode,
             Candidate.status.in_(("approved", "rejected", "rendered")),
         )
-        .all()
     )
+    if workspace_id is not None:
+        query = query.filter(Job.workspace_id == workspace_id)
+    rows = query.all()
 
     niche_rows = [
         (candidate, job)

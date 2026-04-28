@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 
-from app.core.config import settings
+from app.services.storage import get_storage, normalize_storage_key
 
 
 def extract_audio_from_video(video_path: str, job_id: int) -> str:
@@ -9,10 +9,7 @@ def extract_audio_from_video(video_path: str, job_id: int) -> str:
     if not video_file.exists():
         raise FileNotFoundError(f"Vídeo não encontrado: {video_file}")
 
-    downloads_dir = Path(settings.base_data_dir) / "downloads"
-    downloads_dir.mkdir(parents=True, exist_ok=True)
-
-    audio_path = downloads_dir / f"job_{job_id}.mp3"
+    audio_path = get_storage().path_for(normalize_storage_key("downloads", f"job_{job_id}.mp3"))
 
     command = [
         "ffmpeg",

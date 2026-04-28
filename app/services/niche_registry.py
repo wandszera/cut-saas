@@ -2,6 +2,7 @@ import json
 import re
 from collections import Counter
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.niche_definition import NicheDefinition
@@ -121,6 +122,7 @@ def _build_local_niche_suggestion(name: str, description: str | None = None) -> 
 def serialize_niche_definition(niche: NicheDefinition) -> dict:
     return {
         "id": niche.id,
+        "workspace_id": niche.workspace_id,
         "name": niche.name,
         "slug": niche.slug,
         "description": niche.description,
@@ -185,22 +187,51 @@ def sync_builtin_niches(db: Session) -> None:
         db.commit()
 
 
-def list_niche_definitions(db: Session, *, include_inactive: bool = True) -> list[dict]:
+def list_niche_definitions(
+    db: Session,
+    *,
+    include_inactive: bool = True,
+    workspace_id: int | None = None,
+) -> list[dict]:
     sync_builtin_niches(db)
-    query = db.query(NicheDefinition).order_by(NicheDefinition.source.asc(), NicheDefinition.name.asc())
+    query = db.query(NicheDefinition)
+    if workspace_id is not None:
+        query = query.filter(
+            or_(
+                NicheDefinition.workspace_id.is_(None),
+                NicheDefinition.workspace_id == workspace_id,
+            )
+        )
+    query = query.order_by(NicheDefinition.source.asc(), NicheDefinition.name.asc())
     rows = query.all()
     if not include_inactive:
         rows = [row for row in rows if row.status == "active"]
     return [serialize_niche_definition(row) for row in rows]
 
 
-def get_niche_definition_by_slug(db: Session, slug: str) -> NicheDefinition | None:
+def get_niche_definition_by_slug(
+    db: Session,
+    slug: str,
+    *,
+    workspace_id: int | None = None,
+) -> NicheDefinition | None:
     sync_builtin_niches(db)
-    return db.query(NicheDefinition).filter(NicheDefinition.slug == slug).first()
+    query = db.query(NicheDefinition).filter(NicheDefinition.slug == slug)
+    if workspace_id is not None:
+        query = query.filter(
+            or_(
+                NicheDefinition.workspace_id.is_(None),
+                NicheDefinition.workspace_id == workspace_id,
+            )
+        )
+    rows = query.all()
+    if workspace_id is None:
+        return rows[0] if rows else None
+    return next((row for row in rows if row.workspace_id == workspace_id), rows[0] if rows else None)
 
 
-def get_active_niche_profiles(db: Session) -> dict[str, dict]:
-    niches = list_niche_definitions(db, include_inactive=False)
+def get_active_niche_profiles(db: Session, *, workspace_id: int | None = None) -> dict[str, dict]:
+    niches = list_niche_definitions(db, include_inactive=False, workspace_id=workspace_id)
     profiles = {}
     for niche in niches:
         profiles[niche["slug"]] = {
@@ -221,8 +252,8 @@ def get_active_niche_profiles(db: Session) -> dict[str, dict]:
     return profiles
 
 
-def get_niche_profile(db: Session, niche: str | None) -> dict:
-    profiles = get_active_niche_profiles(db)
+def get_niche_profile(db: Session, niche: str | None, *, workspace_id: int | None = None) -> dict:
+    profiles = get_active_niche_profiles(db, workspace_id=workspace_id)
     normalized = (niche or "geral").strip().lower()
     return profiles.get(normalized, profiles["geral"])
 
@@ -274,15 +305,23 @@ def create_pending_niche(
     *,
     name: str,
     description: str | None = None,
+    workspace_id: int | None = None,
 ) -> dict:
     slug = slugify_niche_name(name)
-    existing = get_niche_definition_by_slug(db, slug)
+    existing = get_niche_definition_by_slug(db, slug, workspace_id=workspace_id)
+    if existing and existing.workspace_id != workspace_id:
+        base_slug = slug
+        suffix = 2
+        while get_niche_definition_by_slug(db, slug, workspace_id=None):
+            slug = f"{base_slug}-{suffix}"
+            suffix += 1
+        existing = None
     if existing and existing.status in {"active", "pending"}:
         raise ValueError("Já existe um nicho ativo ou pendente com esse nome")
 
     suggestion = suggest_keywords_for_new_niche(name=name, description=description)
     if existing is None:
-        existing = NicheDefinition(slug=slug)
+        existing = NicheDefinition(slug=slug, workspace_id=workspace_id)
         db.add(existing)
 
     existing.name = name.strip()
@@ -297,8 +336,22 @@ def create_pending_niche(
     return serialize_niche_definition(existing)
 
 
-def approve_niche(db: Session, slug: str) -> dict:
-    niche = get_niche_definition_by_slug(db, slug)
+def _get_mutable_niche_by_slug(
+    db: Session,
+    slug: str,
+    *,
+    workspace_id: int | None = None,
+) -> NicheDefinition | None:
+    niche = get_niche_definition_by_slug(db, slug, workspace_id=workspace_id)
+    if niche is None:
+        return None
+    if workspace_id is not None and niche.workspace_id != workspace_id:
+        return None
+    return niche
+
+
+def approve_niche(db: Session, slug: str, *, workspace_id: int | None = None) -> dict:
+    niche = _get_mutable_niche_by_slug(db, slug, workspace_id=workspace_id)
     if niche is None:
         raise ValueError("Nicho não encontrado")
     niche.status = "active"
@@ -307,8 +360,8 @@ def approve_niche(db: Session, slug: str) -> dict:
     return serialize_niche_definition(niche)
 
 
-def reject_niche(db: Session, slug: str) -> dict:
-    niche = get_niche_definition_by_slug(db, slug)
+def reject_niche(db: Session, slug: str, *, workspace_id: int | None = None) -> dict:
+    niche = _get_mutable_niche_by_slug(db, slug, workspace_id=workspace_id)
     if niche is None:
         raise ValueError("Nicho não encontrado")
     niche.status = "rejected"
@@ -317,8 +370,8 @@ def reject_niche(db: Session, slug: str) -> dict:
     return serialize_niche_definition(niche)
 
 
-def archive_niche(db: Session, slug: str) -> dict:
-    niche = get_niche_definition_by_slug(db, slug)
+def archive_niche(db: Session, slug: str, *, workspace_id: int | None = None) -> dict:
+    niche = _get_mutable_niche_by_slug(db, slug, workspace_id=workspace_id)
     if niche is None:
         raise ValueError("Nicho não encontrado")
     if niche.slug == "geral":

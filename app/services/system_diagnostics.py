@@ -105,6 +105,74 @@ def _detect_directories() -> list[dict[str, Any]]:
     return rows
 
 
+def _build_readiness_item(*, name: str, ok: bool, detail: str, status_ok: str = "ok", status_fail: str = "pendente") -> dict[str, Any]:
+    return {
+        "name": name,
+        "ok": ok,
+        "status": _status(ok, status_ok, status_fail),
+        "detail": detail,
+    }
+
+
+def _detect_deployment_readiness() -> dict[str, Any]:
+    checks = [
+        _build_readiness_item(
+            name="Environment",
+            ok=settings.environment in {"staging", "production"},
+            detail=f"ENVIRONMENT={settings.environment}",
+        ),
+        _build_readiness_item(
+            name="Database",
+            ok=settings.is_deployed_environment and settings.database_url_for_engine.startswith("postgresql+psycopg://"),
+            detail=settings.database_url_for_engine,
+        ),
+        _build_readiness_item(
+            name="Alembic",
+            ok=Path("alembic.ini").exists() and Path("alembic/env.py").exists(),
+            detail="alembic.ini e alembic/env.py precisam existir para upgrade head",
+        ),
+        _build_readiness_item(
+            name="Secret key",
+            ok=settings.secret_key != "dev-secret-change-me" and len(settings.secret_key) >= 32,
+            detail="SECRET_KEY deve ser unico e ter pelo menos 32 caracteres",
+        ),
+        _build_readiness_item(
+            name="Session cookie",
+            ok=settings.environment != "production" or settings.session_cookie_secure,
+            detail=f"SESSION_COOKIE_SECURE={settings.session_cookie_secure}",
+        ),
+        _build_readiness_item(
+            name="Queue backend",
+            ok=settings.pipeline_queue_backend == "worker",
+            detail=f"PIPELINE_QUEUE_BACKEND={settings.pipeline_queue_backend}",
+        ),
+        _build_readiness_item(
+            name="Storage backend",
+            ok=settings.storage_backend != "local",
+            detail=f"STORAGE_BACKEND={settings.storage_backend}",
+        ),
+        _build_readiness_item(
+            name="Billing provider",
+            ok=settings.billing_provider != "mock",
+            detail=f"BILLING_PROVIDER={settings.billing_provider}",
+        ),
+    ]
+
+    ready = all(item["ok"] for item in checks)
+    return {
+        "target_environment": settings.environment,
+        "ready": ready,
+        "checks_ok": sum(1 for item in checks if item["ok"]),
+        "checks_total": len(checks),
+        "checks": checks,
+        "next_steps": [
+            "Rodar alembic upgrade head antes de subir a API em staging.",
+            "Iniciar a API e o worker em processos separados.",
+            "Validar login, criacao de job, processamento e download assinado com dados reais.",
+        ],
+    }
+
+
 def build_system_diagnostics() -> dict[str, Any]:
     checks = [
         _detect_database(),
@@ -127,8 +195,12 @@ def build_system_diagnostics() -> dict[str, Any]:
         "checks": checks,
         "directories": directories,
         "settings_snapshot": {
+            "environment": settings.environment,
             "database_url": settings.database_url,
             "base_data_dir": settings.base_data_dir,
+            "storage_backend": settings.storage_backend,
+            "billing_provider": settings.billing_provider,
+            "pipeline_queue_backend": settings.pipeline_queue_backend,
             "whisper_model": settings.whisper_model,
             "llm_provider": settings.llm_provider,
             "llm_model": settings.llm_model,
@@ -137,4 +209,5 @@ def build_system_diagnostics() -> dict[str, Any]:
             "ollama_base_url": settings.ollama_base_url,
             "openai_base_url": settings.openai_base_url,
         },
+        "deployment_readiness": _detect_deployment_readiness(),
     }

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Entrar - Cut SaaS{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+  <main class="auth-shell">
+    <section class="auth-stage">
+      <div class="auth-stage-copy">
+        <a class="auth-brand" href="/">Clip<span>Forge</span></a>
+        <div class="auth-stage-kicker" style="margin-top: 1.4rem;">Acesso a operacao</div>
+        <h1>ENTRE E VOLTE A PUBLICAR EM RITMO.</h1>
+        <p>
+          Retome sua fila, acompanhe os jobs em andamento e coloque a operacao editorial de volta no trilho
+          <strong>sem perder contexto</strong>.
+        </p>
+        <div class="auth-stage-metrics">
+          <div class="auth-stage-metric">
+            <strong>Queue</strong>
+            <span>jobs, etapas e backlog ao vivo</span>
+          </div>
+          <div class="auth-stage-metric">
+            <strong>Clips</strong>
+            <span>shorts prontos para revisar</span>
+          </div>
+          <div class="auth-stage-metric">
+            <strong>Export</strong>
+            <span>artefatos prontos para publicar</span>
+          </div>
+        </div>
+      </div>
+      <div class="auth-stage-rail">
+        <div class="auth-stage-card">
+          <strong>Monitoramento</strong>
+          <span>Acompanhe pipeline, heartbeat, aprovacoes e exports sem trocar de contexto.</span>
+        </div>
+        <div class="auth-stage-card">
+          <strong>Workspace privado</strong>
+          <span>Seus arquivos, quotas e historico continuam isolados por conta e por time.</span>
+        </div>
+      </div>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-heading">
+        <span class="eyebrow">ClipForge</span>
+        <h1>Entrar</h1>
+        <p>Use seu email e senha para voltar ao painel e continuar de onde parou.</p>
+      </div>
+
+      {% if flash %}
+        <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+      {% endif %}
+
+      <form class="auth-form" action="/login" method="post">
+        <label>
+          Email
+          <input type="email" name="email" autocomplete="email" required />
+        </label>
+        <label>
+          Senha
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Entrar</button>
+      </form>
+
+      <p class="auth-switch">
+        Ainda nao tem conta? <a href="/register">Criar conta</a>
+      </p>
+    </section>
+  </main>
+{% endblock %}

@@ -15,7 +15,7 @@ from app.services.scoring import score_candidates
 class FeedbackLearningTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.test_artifacts_dir = Path("tests/.tmp")
+        cls.test_artifacts_dir = Path("test_databases")
         cls.test_artifacts_dir.mkdir(parents=True, exist_ok=True)
         cls.db_path = cls.test_artifacts_dir / f"feedback_{uuid4().hex}.db"
         cls.engine = create_engine(

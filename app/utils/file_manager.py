@@ -1,8 +1,5 @@
-from pathlib import Path
-from app.core.config import settings
+from app.services.storage import get_storage
 
 
 def ensure_directories():
-    base = Path(settings.base_data_dir)
-    for folder in ["downloads", "transcripts", "clips", "temp", "exports", "uploads"]:
-        (base / folder).mkdir(parents=True, exist_ok=True)
+    get_storage().ensure_default_prefixes(["downloads", "transcripts", "clips", "temp", "exports", "uploads"])

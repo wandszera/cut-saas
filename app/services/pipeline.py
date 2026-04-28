@@ -1,21 +1,27 @@
 import json
 import logging
-from datetime import datetime, UTC
-from pathlib import Path
+import os
+import socket
+from datetime import datetime, timedelta, UTC
 from typing import Any
+from uuid import uuid4
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.database import SessionLocal
 from app.models.job import Job
 from app.models.job_step import JobStep
+from app.models.candidate import Candidate
 from app.services.audio import extract_audio_from_video
 from app.services.candidates import ensure_default_candidates_for_job
 from app.services.niche_classifier import detect_niche
 from app.services.segmentation import load_transcript
 from app.services.transcript_insights import analyze_transcript_context
 from app.services.transcription import transcribe_audio
+from app.services.storage import get_storage
+from app.services.usage import record_llm_usage, record_storage_snapshot_usage, record_video_processed_usage
 from app.services.youtube import download_youtube_media
 
 
@@ -36,6 +42,7 @@ ACTIVE_PIPELINE_JOB_STATUSES = {
 MAX_STEP_ATTEMPTS = 3
 logger = logging.getLogger(__name__)
 LLM_ENRICHMENT_MAX_FAILURES_BEFORE_SKIP = 2
+PIPELINE_WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex}"
 
 
 class StepExhaustedError(RuntimeError):
@@ -91,6 +98,10 @@ def _duration_seconds(started_at: datetime | None, completed_at: datetime | None
     return round((completed_at - started_at).total_seconds(), 3)
 
 
+def _lock_stale_before() -> datetime:
+    return _utcnow() - timedelta(seconds=max(1, int(settings.pipeline_lock_stale_seconds or 1)))
+
+
 def _log_step_event(
     event: str,
     job_id: int,
@@ -134,6 +145,82 @@ def _get_or_create_step(db: Session, job_id: int, step_name: str) -> JobStep:
     db.add(step)
     db.flush()
     return step
+
+
+def _try_acquire_job_lock(db: Session, job_id: int, worker_id: str | None = None) -> bool:
+    lock_owner = worker_id or PIPELINE_WORKER_ID
+    now = _utcnow()
+    stale_before = _lock_stale_before()
+    updated = (
+        db.query(Job)
+        .filter(Job.id == job_id)
+        .filter(or_(Job.locked_at.is_(None), Job.locked_at < stale_before))
+        .update(
+            {
+                Job.locked_at: now,
+                Job.locked_by: lock_owner,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    return bool(updated)
+
+
+def _release_job_lock(db: Session, job: Job | None, worker_id: str | None = None) -> None:
+    if not job:
+        return
+    lock_owner = worker_id or PIPELINE_WORKER_ID
+    updated = (
+        db.query(Job)
+        .filter(Job.id == job.id)
+        .filter(or_(Job.locked_by == lock_owner, Job.locked_by.is_(None)))
+        .update(
+            {
+                Job.locked_at: None,
+                Job.locked_by: None,
+            },
+            synchronize_session=False,
+        )
+    )
+    if updated:
+        db.commit()
+
+
+def recover_stale_pipeline_jobs(db: Session) -> int:
+    stale_before = _lock_stale_before()
+    stale_jobs = (
+        db.query(Job)
+        .filter(Job.locked_at.is_not(None), Job.locked_at < stale_before)
+        .filter(Job.status.in_(ACTIVE_PIPELINE_JOB_STATUSES))
+        .all()
+    )
+    for job in stale_jobs:
+        running_steps = (
+            db.query(JobStep)
+            .filter(JobStep.job_id == job.id, JobStep.status == "running")
+            .all()
+        )
+        for step in running_steps:
+            step.status = "failed"
+            step.error_message = "Execucao interrompida antes do worker liberar o lock."
+            step.completed_at = _utcnow()
+            step.details = _serialize_details(
+                _merge_details(
+                    _deserialize_details(step.details),
+                    {
+                        "recovered_from_stale_lock": True,
+                        "locked_by": job.locked_by,
+                    },
+                )
+            )
+        job.status = "pending"
+        job.error_message = "Job recuperado apos lock expirado; aguardando retry seguro."
+        job.locked_at = None
+        job.locked_by = None
+    if stale_jobs:
+        db.commit()
+    return len(stale_jobs)
 
 
 def _is_cancel_requested(job: Job) -> bool:
@@ -465,6 +552,7 @@ def reset_pipeline_state_from_step(
     if "analyzing" in steps_to_reset:
         job.detected_niche = None
         job.niche_confidence = None
+        db.query(Candidate).filter(Candidate.job_id == job.id).delete()
     if "llm_enrichment" in steps_to_reset:
         job.transcript_insights = None
 
@@ -475,7 +563,21 @@ def reset_pipeline_state_from_step(
 
 
 def _path_exists(path_value: str | None) -> bool:
-    return bool(path_value) and Path(path_value).exists()
+    return get_storage().exists(path_value)
+
+
+def _transcript_duration_seconds(transcript_data: dict[str, Any]) -> float | None:
+    segments = transcript_data.get("segments") or []
+    ends = []
+    for segment in segments:
+        try:
+            ends.append(float(segment.get("end", 0)))
+        except (TypeError, ValueError):
+            continue
+    if ends:
+        return max(ends)
+    text = (transcript_data.get("text") or "").strip()
+    return 0.0 if text else None
 
 
 def _build_queue_message(queue_position: int) -> str:
@@ -654,6 +756,12 @@ def _run_transcription_step(db: Session, job: Job, *, force: bool = False) -> No
         job.audio_path,
         job.id,
         progress_callback=_transcription_progress,
+    )
+    transcript_data = load_transcript(job.transcript_path)
+    record_video_processed_usage(
+        db,
+        job,
+        duration_seconds=_transcript_duration_seconds(transcript_data),
     )
     db.commit()
     mark_step_completed(
@@ -879,6 +987,12 @@ def _run_llm_enrichment_step(
     try:
         _ensure_not_canceled(db, job, "llm_enrichment")
         insights = analyze_transcript_context(job.title, transcript_text)
+        record_llm_usage(
+            db,
+            job,
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+        )
     except Exception as exc:
         llm_insights_error = str(exc)
         insights = {}
@@ -901,15 +1015,24 @@ def process_job_pipeline(
     job_id: int,
     force: bool = False,
     start_from_step: str | None = None,
+    worker_id: str | None = None,
 ):
     db = SessionLocal()
     current_step = None
+    job = None
+    lock_acquired = False
 
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
             print(f"[PIPELINE] Job {job_id} não encontrado", flush=True)
             return
+
+        if not _try_acquire_job_lock(db, job.id, worker_id):
+            print(f"[PIPELINE] Job {job.id} ja esta em processamento por outro worker", flush=True)
+            return
+        lock_acquired = True
+        db.refresh(job)
 
         print(f"[PIPELINE] Iniciando job {job.id}", flush=True)
         job.error_message = None
@@ -967,6 +1090,8 @@ def process_job_pipeline(
         job.status = "done"
         job.error_message = None
         db.commit()
+        if job.workspace_id is not None:
+            record_storage_snapshot_usage(db, job.workspace_id)
         print(f"[PIPELINE] status=done | job_id={job.id}", flush=True)
 
     except Exception as e:
@@ -990,5 +1115,7 @@ def process_job_pipeline(
                 job.error_message = str(e)
                 db.commit()
     finally:
+        if lock_acquired:
+            _release_job_lock(db, job, worker_id)
         db.close()
         _kick_next_pending_job(job_id)

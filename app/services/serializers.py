@@ -1,5 +1,6 @@
 from app.models.candidate import Candidate
 from app.models.clip import Clip
+from app.services.publication import build_clip_publication_package
 from app.utils.media_urls import build_static_url
 
 
@@ -53,6 +54,7 @@ def serialize_clip(clip: Clip) -> dict:
         "suggested_filename": clip.suggested_filename,
         "render_preset": clip.render_preset,
         "publication_status": clip.publication_status,
+        "publication": build_clip_publication_package(clip),
         "subtitles_burned": clip.subtitles_burned,
         "output_path": clip.output_path,
         "output_url": build_static_url(clip.output_path),

@@ -5,6 +5,7 @@ import os
 from yt_dlp import YoutubeDL
 
 from app.core.config import settings
+from app.services.storage import get_storage, normalize_storage_key
 from app.utils.runtime_env import build_runtime_env, detect_node
 
 
@@ -57,6 +58,19 @@ def _prepare_process_environment() -> dict[str, str]:
     return env
 
 
+def _build_js_runtime_options() -> dict[str, Any]:
+    info = detect_node()
+    if not info.get("available"):
+        return {}
+
+    node_bin = str(info.get("node_bin") or settings.node_bin or "node").strip()
+    return {
+        "js_runtimes": {
+            "node": {"path": node_bin},
+        }
+    }
+
+
 def _check_node_or_raise() -> None:
     info = detect_node()
     if not info["available"]:
@@ -68,11 +82,32 @@ def _check_node_or_raise() -> None:
         )
 
 
-def download_youtube_media(url: str, job_id: int) -> dict:
-    downloads_dir = Path(settings.base_data_dir) / "downloads"
-    downloads_dir.mkdir(parents=True, exist_ok=True)
+def fetch_youtube_metadata(url: str) -> dict:
+    _prepare_process_environment()
+    _check_node_or_raise()
 
-    video_output = str(downloads_dir / f"job_{job_id}.%(ext)s")
+    opts = _base_opts()
+    opts["skip_download"] = True
+    opts.update(_build_js_runtime_options())
+
+    try:
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        raise RuntimeError(f"Erro ao consultar metadados do YouTube: {exc}") from exc
+
+    return {
+        "title": info.get("title"),
+        "video_id": info.get("id"),
+        "duration_seconds": float(info.get("duration") or 0.0),
+    }
+
+
+def download_youtube_media(url: str, job_id: int) -> dict:
+    storage = get_storage()
+    downloads_dir = storage.ensure_prefix("downloads")
+
+    video_output = str(storage.path_for(normalize_storage_key("downloads", f"job_{job_id}.%(ext)s")))
 
     # prepara PATH do processo atual
     _prepare_process_environment()
@@ -81,8 +116,9 @@ def download_youtube_media(url: str, job_id: int) -> dict:
     _check_node_or_raise()
 
     attempts = [
-        "best[ext=mp4]/bestvideo+bestaudio/best",
+        "bestvideo*+bestaudio/best",
         "bestvideo+bestaudio/best",
+        "best[ext=mp4]/best",
         "best",
     ]
 
@@ -93,6 +129,7 @@ def download_youtube_media(url: str, job_id: int) -> dict:
         opts = _base_opts(video_output)
         opts["format"] = fmt
         opts["merge_output_format"] = "mp4"
+        opts.update(_build_js_runtime_options())
 
         try:
             with YoutubeDL(opts) as ydl:
