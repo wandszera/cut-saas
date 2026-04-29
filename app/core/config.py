@@ -8,6 +8,8 @@ ProductionEnvironment = Literal["local", "test", "staging", "production"]
 PipelineQueueBackend = Literal["local", "worker"]
 StorageBackend = Literal["local", "s3", "r2"]
 BillingProvider = Literal["mock", "stripe", "mercado_pago"]
+WhisperPrecisionMode = Literal["auto", "fp32", "fp16"]
+TranscriptionProvider = Literal["auto", "openai_whisper", "faster_whisper"]
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -31,6 +33,10 @@ class Settings(BaseSettings):
     storage_backend: StorageBackend = "local"
     storage_bucket: str | None = None
     storage_public_base_url: str | None = None
+    storage_endpoint_url: str | None = None
+    storage_region: str | None = None
+    storage_access_key_id: str | None = None
+    storage_secret_access_key: str | None = None
     billing_provider: BillingProvider = "mock"
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
@@ -43,12 +49,16 @@ class Settings(BaseSettings):
     session_cookie_name: str = "cut_saas_session"
     session_max_age_seconds: int = 60 * 60 * 24 * 14
     session_cookie_secure: bool = False
+    allowed_hosts: str = "localhost,127.0.0.1,testserver"
+    proxy_trusted_hosts: str = "127.0.0.1"
 
     ytdlp_cookies_file: str | None = None
     ytdlp_cookies_browser: str | None = None
     ytdlp_cookies_browser_profile: str | None = None
     ytdlp_verbose: bool = True
+    transcription_provider: TranscriptionProvider = "auto"
     whisper_model: str = "base"
+    whisper_precision: WhisperPrecisionMode = "auto"
     node_bin: str = "node"
     node_extra_path: str | None = None
     llm_rerank_enabled: bool = False
@@ -89,6 +99,14 @@ class Settings(BaseSettings):
     def is_deployed_environment(self) -> bool:
         return self.environment in {"staging", "production"}
 
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        return [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
+
+    @property
+    def proxy_trusted_hosts_list(self) -> list[str]:
+        return [host.strip() for host in self.proxy_trusted_hosts.split(",") if host.strip()]
+
     @model_validator(mode="after")
     def validate_deployed_environment(self):
         if self.is_deployed_environment:
@@ -98,10 +116,20 @@ class Settings(BaseSettings):
                 raise ValueError("DATABASE_URL must use Postgres in staging and production")
             if self.secret_key == "dev-secret-change-me" or len(self.secret_key) < 32:
                 raise ValueError("SECRET_KEY must be unique and at least 32 characters in staging and production")
+            if not self.allowed_hosts_list:
+                raise ValueError("ALLOWED_HOSTS must define at least one host in staging and production")
+            if "*" in self.allowed_hosts_list:
+                raise ValueError("ALLOWED_HOSTS cannot use wildcard in staging and production")
         if self.environment == "production" and not self.session_cookie_secure:
             raise ValueError("SESSION_COOKIE_SECURE must be true in production")
         if self.storage_backend in {"s3", "r2"} and not self.storage_bucket:
             raise ValueError("STORAGE_BUCKET is required for s3/r2 storage backends")
+        if self.storage_backend in {"s3", "r2"} and not self.storage_access_key_id:
+            raise ValueError("STORAGE_ACCESS_KEY_ID is required for s3/r2 storage backends")
+        if self.storage_backend in {"s3", "r2"} and not self.storage_secret_access_key:
+            raise ValueError("STORAGE_SECRET_ACCESS_KEY is required for s3/r2 storage backends")
+        if self.storage_backend == "r2" and not self.storage_endpoint_url:
+            raise ValueError("STORAGE_ENDPOINT_URL is required for r2 storage backend")
         if self.billing_provider == "stripe" and not self.stripe_secret_key:
             raise ValueError("STRIPE_SECRET_KEY is required when BILLING_PROVIDER=stripe")
         if self.billing_provider == "stripe" and not self.stripe_price_starter:

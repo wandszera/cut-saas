@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlalchemy
 alembic
 psycopg[binary]
+boto3
 pydantic
 pydantic-settings
 python-multipart
@@ -10,4 +11,5 @@ jinja2
 httpx
 yt-dlp
 openai-whisper
+faster-whisper
 ffmpeg-python

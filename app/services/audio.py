@@ -29,4 +29,5 @@ def extract_audio_from_video(video_path: str, job_id: int) -> str:
     if not audio_path.exists():
         raise FileNotFoundError(f"Áudio extraído não encontrado: {audio_path}")
 
+    get_storage().sync_path(audio_path)
     return str(audio_path)

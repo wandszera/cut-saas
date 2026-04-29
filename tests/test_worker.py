@@ -16,7 +16,7 @@ from app.models.niche_keyword import NicheKeyword
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
-from app.worker import get_next_pending_job_id, run_worker_once
+from app.worker import get_next_pending_job_id, run_worker, run_worker_once
 
 
 class WorkerTestCase(unittest.TestCase):
@@ -102,6 +102,31 @@ class WorkerTestCase(unittest.TestCase):
 
         self.assertFalse(did_work)
         mocked_pipeline.assert_not_called()
+
+    def test_run_worker_once_logs_idle_when_queue_is_empty(self):
+        self._create_job(status="done")
+
+        with (
+            patch("app.worker.SessionLocal", self.TestingSessionLocal),
+            patch("app.worker.process_job_pipeline") as mocked_pipeline,
+            patch("app.worker._log_worker_event") as mocked_log,
+        ):
+            did_work = run_worker_once()
+
+        self.assertFalse(did_work)
+        mocked_pipeline.assert_not_called()
+        mocked_log.assert_any_call("worker_idle")
+
+    def test_run_worker_logs_loop_lifecycle(self):
+        with (
+            patch("app.worker.run_worker_once", side_effect=[False]),
+            patch("app.worker._log_worker_event") as mocked_log,
+        ):
+            processed = run_worker(poll_interval_seconds=0.1, max_jobs=1)
+
+        self.assertEqual(processed, 0)
+        mocked_log.assert_any_call("worker_loop_started", poll_interval_seconds=0.1, max_jobs=1)
+        mocked_log.assert_any_call("worker_loop_finished", processed_jobs=0)
 
 
 if __name__ == "__main__":

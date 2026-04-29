@@ -14,9 +14,11 @@ from app.services.auth import (
     register_user,
 )
 from app.web.template_utils import build_templates
+from app.web.security import validate_csrf_request
+from app.services.rate_limit import AUTH_LOGIN_RULE, AUTH_REGISTER_RULE, enforce_rate_limit
 
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(tags=["auth"], dependencies=[Depends(validate_csrf_request)])
 templates = build_templates()
 
 
@@ -56,10 +58,12 @@ def login_page(
 
 @router.post("/login")
 def login(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, AUTH_LOGIN_RULE, suffix=(email or "").strip().lower())
     user = authenticate_user(db, email=email, password=password)
     if not user:
         return RedirectResponse(
@@ -89,12 +93,14 @@ def register_page(
 
 @router.post("/register")
 def register(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
     display_name: str = Form(""),
     workspace_name: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, AUTH_REGISTER_RULE, suffix=(email or "").strip().lower())
     try:
         user = register_user(
             db,

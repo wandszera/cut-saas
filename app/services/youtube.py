@@ -155,6 +155,7 @@ def download_youtube_media(url: str, job_id: int) -> dict:
             raise FileNotFoundError(f"Vídeo baixado não encontrado para job {job_id}")
         video_path = video_candidates[0]
 
+    storage.sync_path(video_path)
     return {
         "video_path": str(video_path),
         "title": title,

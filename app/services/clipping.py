@@ -122,4 +122,5 @@ def render_clip(
     if not output_path.exists():
         raise FileNotFoundError(f"Clip não foi gerado: {output_path}")
 
+    get_storage().sync_path(output_path)
     return str(output_path)

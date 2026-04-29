@@ -346,6 +346,56 @@
   {% else %}
   {{ rendered_content | safe }}
   {% endif %}
+  <script>
+    (() => {
+      const csrfFieldName = "{{ csrf_form_field }}";
+      const csrfToken = "{{ csrf_token }}";
+
+      function syncCsrfToken(form) {
+        if (!form || !csrfToken) {
+          return;
+        }
+        const method = (form.getAttribute("method") || "get").toLowerCase();
+        if (method !== "post") {
+          return;
+        }
+        let field = form.querySelector(`input[name="${csrfFieldName}"]`);
+        if (!field) {
+          field = document.createElement("input");
+          field.type = "hidden";
+          field.name = csrfFieldName;
+          form.appendChild(field);
+        }
+        field.value = csrfToken;
+      }
+
+      function syncAllForms(root = document) {
+        root.querySelectorAll("form").forEach(syncCsrfToken);
+      }
+
+      document.addEventListener("submit", (event) => {
+        syncCsrfToken(event.target);
+      });
+
+      document.addEventListener("DOMContentLoaded", () => {
+        syncAllForms();
+        const observer = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+              if (!(node instanceof HTMLElement)) {
+                continue;
+              }
+              if (node.matches && node.matches("form")) {
+                syncCsrfToken(node);
+              }
+              syncAllForms(node);
+            }
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

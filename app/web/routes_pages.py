@@ -47,18 +47,19 @@ from app.services.quota import ensure_workspace_can_start_job, get_workspace_quo
 from app.services.render_presets import DEFAULT_PRESET, list_render_presets
 from app.services.render_workflow import render_candidate_clip, render_manual_clip
 from app.services.serializers import serialize_candidate, serialize_clip
-from app.services.system_diagnostics import build_system_diagnostics
+from app.services.system_diagnostics import build_runtime_readiness, build_system_diagnostics
 from app.services.scoring import score_candidates
 from app.services.segmentation import build_candidate_windows, load_segments
 from app.services.media import probe_video_duration_seconds
 from app.services.storage import get_storage, normalize_storage_key
 from app.services.youtube import fetch_youtube_metadata
+from app.web.security import validate_csrf_request
 from app.web.template_utils import build_templates
 from app.utils.media_urls import build_static_url
 from app.utils.timecodes import parse_timecode_to_seconds
 
 
-router = APIRouter(tags=["pages"])
+router = APIRouter(tags=["pages"], dependencies=[Depends(validate_csrf_request)])
 templates = build_templates()
 STEP_STALE_HEARTBEAT_SECONDS = 900
 JOB_AUTO_REFRESH_STATUSES = {
@@ -995,6 +996,7 @@ def dashboard(
     priority_groups = build_job_priority_groups(db, filtered_jobs)
     publication_board = build_publication_board(db, recent_jobs)
     quota_status = get_workspace_quota_status(db, workspace.id)
+    runtime_readiness = build_runtime_readiness()
 
     return templates.TemplateResponse(
         request,
@@ -1008,6 +1010,7 @@ def dashboard(
             "priority_groups": priority_groups,
             "publication_board": publication_board,
             "quota_status": quota_status,
+            "runtime_readiness": runtime_readiness,
             "flash": {"message": message, "level": message_level} if message else None,
             "now": datetime.now(),
             "auto_refresh": has_active_jobs(filtered_jobs),
@@ -1208,6 +1211,7 @@ def create_local_job_from_form(
     with stored_path.open("wb") as buffer:
         shutil.copyfileobj(video_file.file, buffer)
 
+    get_storage().sync_path(stored_path)
     try:
         ensure_workspace_can_start_job(db, workspace.id)
         ensure_workspace_can_create_job(

@@ -132,6 +132,24 @@ def _log_step_event(
     logger.info(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
+def _log_pipeline_event(event: str, job_id: int, **payload) -> None:
+    body: dict[str, Any] = {
+        "event": event,
+        "job_id": job_id,
+    }
+    body.update(payload)
+    logger.info(json.dumps(body, ensure_ascii=False, sort_keys=True))
+
+
+def _log_pipeline_event(event: str, job_id: int, **payload) -> None:
+    body: dict[str, Any] = {
+        "event": event,
+        "job_id": job_id,
+    }
+    body.update(payload)
+    logger.info(json.dumps(body, ensure_ascii=False, sort_keys=True))
+
+
 def _get_or_create_step(db: Session, job_id: int, step_name: str) -> JobStep:
     step = (
         db.query(JobStep)
@@ -1025,16 +1043,16 @@ def process_job_pipeline(
     try:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
-            print(f"[PIPELINE] Job {job_id} não encontrado", flush=True)
+            _log_pipeline_event("pipeline_job_not_found", job_id)
             return
 
         if not _try_acquire_job_lock(db, job.id, worker_id):
-            print(f"[PIPELINE] Job {job.id} ja esta em processamento por outro worker", flush=True)
+            _log_pipeline_event("pipeline_job_locked_elsewhere", job.id, worker_id=worker_id or PIPELINE_WORKER_ID)
             return
         lock_acquired = True
         db.refresh(job)
 
-        print(f"[PIPELINE] Iniciando job {job.id}", flush=True)
+        _log_pipeline_event("pipeline_job_started", job.id, worker_id=worker_id or PIPELINE_WORKER_ID)
         job.error_message = None
         if job.status == "failed":
             job.status = "pending"
@@ -1056,7 +1074,7 @@ def process_job_pipeline(
                 )
 
         if not _try_acquire_pipeline_slot(db, job):
-            print(f"[PIPELINE] Job {job.id} aguardando vaga na fila", flush=True)
+            _log_pipeline_event("pipeline_job_waiting_for_slot", job.id)
             return
 
         steps_to_run = get_steps_from(start_from_step) if start_from_step else PIPELINE_STEPS
@@ -1066,25 +1084,29 @@ def process_job_pipeline(
             current_step = step_name
             if step_name == "downloading":
                 _run_download_step(db, job, force=force)
-                print(f"[PIPELINE] status=downloading | video_path={job.video_path}", flush=True)
+                _log_pipeline_event("pipeline_step_finished", job.id, step_name=step_name, video_path=job.video_path)
             elif step_name == "extracting_audio":
                 _run_extract_audio_step(db, job, force=force)
-                print(f"[PIPELINE] status=extracting_audio | audio_path={job.audio_path}", flush=True)
+                _log_pipeline_event("pipeline_step_finished", job.id, step_name=step_name, audio_path=job.audio_path)
             elif step_name == "transcribing":
                 _run_transcription_step(db, job, force=force)
-                print(f"[PIPELINE] status=transcribing | transcript_path={job.transcript_path}", flush=True)
+                _log_pipeline_event("pipeline_step_finished", job.id, step_name=step_name, transcript_path=job.transcript_path)
             elif step_name == "analyzing":
                 _run_analyze_step(db, job, force=force)
-                print(
-                    f"[PIPELINE] status=analyzing | detected_niche={job.detected_niche} | "
-                    f"niche_confidence={job.niche_confidence}",
-                    flush=True,
+                _log_pipeline_event(
+                    "pipeline_step_finished",
+                    job.id,
+                    step_name=step_name,
+                    detected_niche=job.detected_niche,
+                    niche_confidence=job.niche_confidence,
                 )
             elif step_name == "llm_enrichment":
                 _run_llm_enrichment_step(db, job, force=force)
-                print(
-                    f"[PIPELINE] status=llm_enrichment | insights_generated={bool(job.transcript_insights)}",
-                    flush=True,
+                _log_pipeline_event(
+                    "pipeline_step_finished",
+                    job.id,
+                    step_name=step_name,
+                    insights_generated=bool(job.transcript_insights),
                 )
 
         job.status = "done"
@@ -1092,10 +1114,10 @@ def process_job_pipeline(
         db.commit()
         if job.workspace_id is not None:
             record_storage_snapshot_usage(db, job.workspace_id)
-        print(f"[PIPELINE] status=done | job_id={job.id}", flush=True)
+        _log_pipeline_event("pipeline_job_completed", job.id)
 
     except Exception as e:
-        print(f"[PIPELINE] ERRO em {current_step}: {e}", flush=True)
+        _log_pipeline_event("pipeline_job_failed", job_id, step_name=current_step, error=str(e))
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             if isinstance(e, PipelineCanceledError):

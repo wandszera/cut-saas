@@ -319,4 +319,5 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{safe_text}\n"
                 )
 
+    get_storage().sync_path(ass_path)
     return str(ass_path)

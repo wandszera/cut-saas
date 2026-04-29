@@ -383,6 +383,33 @@
 
     <section class="panel">
       <div class="section-head">
+        <h2>Prontidao operacional</h2>
+        <p style="max-width: 520px;">Leitura rapida do que bloqueia operacao agora: runtime, storage, backlog e worker travado.</p>
+      </div>
+      <div style="margin-bottom: 14px;">
+        {% if diagnostics.runtime_readiness.ready %}
+          <div class="status status-ok">Runtime pronto</div>
+        {% else %}
+          <div class="status status-erro">Runtime com bloqueios</div>
+        {% endif %}
+        <p>
+          {{ diagnostics.runtime_readiness.checks_ok }}/{{ diagnostics.runtime_readiness.checks_total }}
+          checks operacionais atendidos neste momento.
+        </p>
+      </div>
+      <div class="checks-grid">
+        {% for item in diagnostics.runtime_readiness.checks %}
+        <article class="card">
+          <div class="status status-{{ item.status }}">{{ item.status }}</div>
+          <h3 class="item-title">{{ item.name }}</h3>
+          <div class="detail">{{ item.detail }}</div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
         <h2>Prontidao para staging</h2>
         <p style="max-width: 520px;">Checklist operacional para validar se a aplicacao esta pronta para sair do modo local e rodar com Postgres, Alembic e worker separado.</p>
       </div>

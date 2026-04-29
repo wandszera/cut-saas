@@ -31,6 +31,17 @@
       </section>
     {% endif %}
 
+    {% if runtime_readiness and not runtime_readiness.ready %}
+      {% set worker_backlog = runtime_readiness.checks | selectattr("name", "equalto", "Worker backlog") | list %}
+      <section class="dashboard-alert dashboard-alert-warning">
+        Runtime com bloqueios operacionais.
+        {% if worker_backlog and not worker_backlog[0].ok %}
+          Worker precisa de atencao imediata: {{ worker_backlog[0].detail }}.
+        {% endif %}
+        <a href="/system">Ver diagnostico completo</a>
+      </section>
+    {% endif %}
+
     <section class="hero">
       <div class="hero-panel">
         <div class="eyebrow">Pipeline Editorial de Cortes</div>

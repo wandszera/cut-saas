@@ -218,6 +218,29 @@ class RoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"message": "ok"})
 
+    def test_health_live_returns_ok(self):
+        response = self.client.get("/health/live")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_health_ready_returns_runtime_readiness_payload(self):
+        with patch(
+            "app.main.build_runtime_readiness",
+            return_value={
+                "ready": True,
+                "checks_ok": 6,
+                "checks_total": 6,
+                "checks": [{"name": "Banco", "ok": True, "status": "ok", "detail": "db"}],
+            },
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ready")
+        self.assertTrue(response.json()["ready"])
+        self.assertEqual(response.json()["checks_ok"], 6)
+
     def test_analysis_calibration_endpoint_summarizes_real_editorial_history(self):
         job_a = self._create_job(detected_niche="podcast")
         job_b = self._create_job(detected_niche="podcast")
@@ -3731,6 +3754,36 @@ class RoutesTestCase(unittest.TestCase):
         self.assertIsNone(data["distribution"]["final_score"]["avg"])
         self.assertEqual(data["distribution"]["final_score"]["buckets"][0]["count"], 0)
         self.assertEqual(data["distribution"]["duration_seconds"]["buckets"][3]["count"], 0)
+
+    def test_system_page_includes_runtime_readiness_section(self):
+        response = self.client.get("/system")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Prontidao operacional", response.text)
+        self.assertIn("Runtime", response.text)
+
+    def test_dashboard_surfaces_runtime_worker_alert(self):
+        with patch(
+            "app.web.routes_pages.build_runtime_readiness",
+            return_value={
+                "ready": False,
+                "checks_ok": 6,
+                "checks_total": 8,
+                "checks": [
+                    {
+                        "name": "Worker backlog",
+                        "ok": False,
+                        "status": "erro",
+                        "detail": "pending_jobs=2 | active_jobs=1 | running_steps=1 | stale_running_steps=1",
+                    }
+                ],
+            },
+        ):
+            response = self.client.get("/dashboard?message=runtime")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Runtime com bloqueios operacionais.", response.text)
+        self.assertIn("Worker precisa de atencao imediata", response.text)
 
 
 if __name__ == "__main__":

@@ -97,6 +97,7 @@ def build_job_export_bundle(job: Job, clips: list[Clip]) -> str:
             archive_name = clip.suggested_filename or file_path.name
             archive.write(file_path, arcname=f"clips/{archive_name}")
 
+    storage.sync_path(zip_path)
     return str(zip_path)
 
 

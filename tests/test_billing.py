@@ -20,6 +20,7 @@ from app.services.accounts import create_user_with_workspace
 from app.services.auth import create_session_token
 from app.services.billing import MockBillingAdapter, StripeBillingAdapter, create_checkout_session
 from app.services import billing as billing_service
+from app.services.rate_limit import rate_limiter
 from app.web.routes_billing import router as billing_pages_router
 from app.services.quota import ensure_workspace_can_start_job, get_workspace_quota_status
 
@@ -55,6 +56,7 @@ class BillingTestCase(unittest.TestCase):
     def setUp(self):
         Base.metadata.drop_all(bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
+        rate_limiter.clear()
         self.client.cookies.clear()
         self.user_id, self.workspace_id = self._create_user_workspace()
         self.client.cookies.set("cut_saas_session", create_session_token(self.user_id))
@@ -344,6 +346,19 @@ class BillingTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Workspace nao possui assinatura para cancelar")
+
+    def test_api_cancel_subscription_rate_limits_repeated_attempts(self):
+        for _ in range(10):
+            response = self.client.post("/api/billing/cancel")
+            self.assertIn(response.status_code, {200, 400})
+
+        blocked = self.client.post("/api/billing/cancel")
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(
+            blocked.json()["detail"],
+            "Muitas alteracoes de billing em pouco tempo. Tente novamente em instantes.",
+        )
 
     def test_mercado_pago_billing_provider_fails_fast_until_adapter_exists(self):
         original_provider = billing_service.settings.billing_provider

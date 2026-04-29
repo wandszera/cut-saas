@@ -17,7 +17,9 @@ from app.services.auth import (
     register_user,
     verify_password,
 )
+from app.services.rate_limit import rate_limiter
 from app.web.routes_auth import router as auth_router
+from app.web.security import apply_security_headers, attach_csrf_cookie, get_or_create_csrf_token
 
 
 class AuthTestCase(unittest.TestCase):
@@ -42,6 +44,17 @@ class AuthTestCase(unittest.TestCase):
                 db.close()
 
         cls.app = FastAPI()
+
+        @cls.app.middleware("http")
+        async def web_security_middleware(request, call_next):
+            token, token_created = get_or_create_csrf_token(request)
+            request.state.csrf_token = token
+            response = await call_next(request)
+            apply_security_headers(request, response)
+            if token_created:
+                attach_csrf_cookie(response, token)
+            return response
+
         cls.app.include_router(auth_router)
         cls.app.dependency_overrides[get_db] = override_get_db
         cls.client = TestClient(cls.app)
@@ -54,9 +67,17 @@ class AuthTestCase(unittest.TestCase):
     def setUp(self):
         Base.metadata.drop_all(bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
+        self.client.cookies.clear()
+        rate_limiter.clear()
 
     def _session(self):
         return self.TestingSessionLocal()
+
+    def _csrf_token_for(self, path: str) -> str:
+        self.client.get(path)
+        token = self.client.cookies.get("cut_saas_csrf")
+        self.assertIsNotNone(token)
+        return token
 
     def test_password_hash_verification(self):
         password_hash = hash_password("senha-segura")
@@ -102,6 +123,7 @@ class AuthTestCase(unittest.TestCase):
             db.close()
 
     def test_register_route_sets_session_cookie(self):
+        csrf_token = self._csrf_token_for("/register")
         response = self.client.post(
             "/register",
             data={
@@ -109,6 +131,7 @@ class AuthTestCase(unittest.TestCase):
                 "password": "senha-segura",
                 "display_name": "Route User",
                 "workspace_name": "Route Workspace",
+                "csrf_token": csrf_token,
             },
             follow_redirects=False,
         )
@@ -138,12 +161,32 @@ class AuthTestCase(unittest.TestCase):
         finally:
             db.close()
 
+        csrf_token = self._csrf_token_for("/login")
         response = self.client.post(
             "/login",
-            data={"email": "reject@example.com", "password": "senha-errada"},
+            data={"email": "reject@example.com", "password": "senha-errada", "csrf_token": csrf_token},
             follow_redirects=False,
         )
 
         self.assertEqual(response.status_code, 303)
         self.assertIn("/login", response.headers["location"])
         self.assertIsNone(response.cookies.get("cut_saas_session"))
+
+    def test_login_route_rate_limits_repeated_attempts(self):
+        csrf_token = self._csrf_token_for("/login")
+        for _ in range(5):
+            response = self.client.post(
+                "/login",
+                data={"email": "flood@example.com", "password": "senha-errada", "csrf_token": csrf_token},
+                follow_redirects=False,
+            )
+            self.assertEqual(response.status_code, 303)
+
+        blocked = self.client.post(
+            "/login",
+            data={"email": "flood@example.com", "password": "senha-errada", "csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Muitas tentativas de login", blocked.text)

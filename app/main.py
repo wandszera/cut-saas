@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
@@ -33,8 +35,14 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
 from app.services.niche_registry import sync_builtin_niches
+from app.services.system_diagnostics import build_runtime_readiness
 from app.services.auth import get_user_id_from_session
 from app.utils.file_manager import ensure_directories
+from app.web.security import (
+    apply_security_headers,
+    attach_csrf_cookie,
+    get_or_create_csrf_token,
+)
 
 if not settings.is_deployed_environment:
     Base.metadata.create_all(bind=engine)
@@ -52,6 +60,19 @@ with SessionLocal() as db:
     sync_builtin_niches(db)
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.proxy_trusted_hosts_list or "127.0.0.1")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list or ["localhost", "127.0.0.1", "testserver"])
+
+
+@app.middleware("http")
+async def apply_web_security(request: Request, call_next):
+    csrf_token, token_created = get_or_create_csrf_token(request)
+    request.state.csrf_token = csrf_token
+    response = await call_next(request)
+    apply_security_headers(request, response)
+    if token_created:
+        attach_csrf_cookie(response, csrf_token)
+    return response
 
 
 @app.middleware("http")
@@ -100,3 +121,17 @@ app.mount("/assets", StaticFiles(directory="app/static"), name="assets")
 @app.get("/health")
 def health():
     return {"message": "ok"}
+
+
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    readiness = build_runtime_readiness()
+    return {
+        "status": "ready" if readiness["ready"] else "not_ready",
+        **readiness,
+    }

@@ -30,6 +30,7 @@ class ConfigTestCase(unittest.TestCase):
             debug=False,
             database_url="postgresql://cut:secret@db:5432/cut_saas",
             secret_key="a-strong-staging-secret-key-32chars",
+            allowed_hosts="staging.example.com",
         )
 
         self.assertEqual(
@@ -42,6 +43,27 @@ class ConfigTestCase(unittest.TestCase):
             normalize_database_url("postgresql+psycopg://cut:secret@db/cut_saas"),
             "postgresql+psycopg://cut:secret@db/cut_saas",
         )
+
+    def test_staging_requires_non_wildcard_allowed_hosts(self):
+        with self.assertRaises(ValidationError):
+            Settings(
+                _env_file=None,
+                environment="staging",
+                debug=False,
+                database_url="postgresql://cut:secret@db:5432/cut_saas",
+                secret_key="a-strong-staging-secret-key-32chars",
+                allowed_hosts="*",
+            )
+
+        with self.assertRaises(ValidationError):
+            Settings(
+                _env_file=None,
+                environment="staging",
+                debug=False,
+                database_url="postgresql://cut:secret@db:5432/cut_saas",
+                secret_key="a-strong-staging-secret-key-32chars",
+                allowed_hosts="",
+            )
 
     def test_stripe_provider_requires_secret_key(self):
         with self.assertRaises(ValidationError):
@@ -68,6 +90,28 @@ class ConfigTestCase(unittest.TestCase):
             mercado_pago_access_token="mp_test_123",
         )
         self.assertEqual(settings.billing_provider, "mercado_pago")
+
+    def test_remote_storage_requires_credentials(self):
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, storage_backend="s3", storage_bucket="bucket")
+
+        with self.assertRaises(ValidationError):
+            Settings(
+                _env_file=None,
+                storage_backend="r2",
+                storage_bucket="bucket",
+                storage_access_key_id="key",
+                storage_secret_access_key="secret",
+            )
+
+        settings = Settings(
+            _env_file=None,
+            storage_backend="s3",
+            storage_bucket="bucket",
+            storage_access_key_id="key",
+            storage_secret_access_key="secret",
+        )
+        self.assertEqual(settings.storage_backend, "s3")
 
 
 if __name__ == "__main__":

@@ -14,10 +14,12 @@ from app.services.billing import (
     cancel_current_subscription,
     create_checkout_session,
 )
+from app.services.rate_limit import BILLING_MUTATION_RULE, enforce_rate_limit
+from app.web.security import validate_csrf_request
 from app.web.template_utils import build_templates
 
 
-router = APIRouter(tags=["billing-pages"])
+router = APIRouter(tags=["billing-pages"], dependencies=[Depends(validate_csrf_request)])
 templates = build_templates()
 
 
@@ -56,10 +58,12 @@ def billing_page(
 
 @router.post("/billing/checkout")
 def start_checkout_from_page(
+    request: Request,
     plan: str = Form(...),
     db: Session = Depends(get_db),
     workspace: Workspace = Depends(require_current_workspace),
 ):
+    enforce_rate_limit(request, BILLING_MUTATION_RULE, suffix=f"{workspace.id}:checkout")
     try:
         session = create_checkout_session(db, workspace_id=workspace.id, plan_slug=plan)
     except ValueError as exc:
@@ -88,9 +92,11 @@ def complete_checkout_from_page(
 
 @router.post("/billing/cancel")
 def cancel_subscription_from_page(
+    request: Request,
     db: Session = Depends(get_db),
     workspace: Workspace = Depends(require_current_workspace),
 ):
+    enforce_rate_limit(request, BILLING_MUTATION_RULE, suffix=f"{workspace.id}:cancel")
     try:
         cancel_current_subscription(db, workspace.id)
     except ValueError as exc:

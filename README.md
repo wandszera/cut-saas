@@ -45,6 +45,7 @@ O roadmap atualizado esta em `docs/saas-roadmap.md`. A prioridade atual e consol
 - SQLite local ou Postgres em staging/producao
 - `yt-dlp`
 - `openai-whisper`
+- `faster-whisper`
 - `ffmpeg`
 
 ## Estrutura principal
@@ -162,7 +163,9 @@ NODE_BIN=node
 NODE_EXTRA_PATH=C:\Program Files\nodejs
 YTDLP_VERBOSE=True
 YTDLP_COOKIES_FILE=app/cookies/youtube_cookies.txt
+TRANSCRIPTION_PROVIDER=auto
 WHISPER_MODEL=base
+WHISPER_PRECISION=auto
 ```
 
 Use `.env.example` como base para criar o `.env` local. Em `staging` e `production`, o app valida configuracoes seguras no startup:
@@ -191,10 +194,18 @@ Variaveis relevantes:
 - `YTDLP_COOKIES_BROWSER`: navegador para leitura de cookies
 - `YTDLP_COOKIES_BROWSER_PROFILE`: perfil do navegador
 - `YTDLP_VERBOSE`: logs detalhados do `yt-dlp`
+- `TRANSCRIPTION_PROVIDER`: `auto`, `openai_whisper` ou `faster_whisper`
 - `WHISPER_MODEL`: modelo do Whisper, por exemplo `base`
+- `WHISPER_PRECISION`: `auto`, `fp32` ou `fp16`
 - `LLM_TIMEOUT_SECONDS`: timeout das chamadas de enriquecimento por LLM
 - `MAX_CONCURRENT_PIPELINE_JOBS`: limite de jobs pesados rodando ao mesmo tempo
 - `PIPELINE_QUEUE_BACKEND`: `local` agenda pelo processo web; `worker` deixa jobs pendentes para `app.worker`
+
+Notas de transcricao:
+
+- `TRANSCRIPTION_PROVIDER=auto` tenta usar `faster-whisper` quando a dependencia estiver instalada e cai para `openai-whisper` caso contrario;
+- `WHISPER_PRECISION=auto` tenta usar `fp16` quando detectar GPU CUDA e usa `fp32` em CPU;
+- para staging focado em velocidade, o caminho recomendado e `TRANSCRIPTION_PROVIDER=auto` com `WHISPER_MODEL=base` ou `tiny`.
 
 ## Como rodar
 
@@ -208,6 +219,8 @@ Depois abra:
 
 - interface web: `http://127.0.0.1:8000/`
 - healthcheck: `http://127.0.0.1:8000/health`
+- liveness: `http://127.0.0.1:8000/health/live`
+- readiness: `http://127.0.0.1:8000/health/ready`
 
 ### Worker separado
 
@@ -310,6 +323,8 @@ Atalhos uteis da interface:
 ### Infra
 
 - `GET /health`
+- `GET /health/live`
+- `GET /health/ready`
 - `GET /jobs/debug/node`
 
 ### Jobs
