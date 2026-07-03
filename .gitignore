@@ -1,22 +1,87 @@
-__pycache__/
-*.pyc
+# ──────────────────────────────────────
+# Environment & Secrets
+# ──────────────────────────────────────
 .env
 .env.*
 !.env.example
+!.env.staging.example
+!.env.staging.r2.example
+!.env.staging.stripe.example
+
+# ──────────────────────────────────────
+# Python
+# ──────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
 .venv/
+.venv*/
 venv/
+
+# ──────────────────────────────────────
+# Database
+# ──────────────────────────────────────
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
-data/downloads/*
-data/transcripts/*
-data/clips/*
-data/subtitles/*
-data/uploads/*
-data/exports/*
-data/temp/*
+
+# ──────────────────────────────────────
+# Data artifacts (videos, audio, clips)
+# ──────────────────────────────────────
+data/
+
+# ──────────────────────────────────────
+# Cookies (contain auth tokens)
+# ──────────────────────────────────────
 app/cookies/*
 !app/cookies/.gitkeep
-app/cookies/youtube_cookies.txt
+
+# ──────────────────────────────────────
+# Test artifacts
+# ──────────────────────────────────────
 tests/.tmp/
 test_databases/
+test_tmp/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ──────────────────────────────────────
+# IDE & OS
+# ──────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ──────────────────────────────────────
+# Logs
+# ──────────────────────────────────────
+*.log
+
+# ──────────────────────────────────────
+# Temporary / debug scripts
+# ──────────────────────────────────────
+dump_error.py
+test_ytdlp.py
+fix_mocks.py
+run_tests_api_jobs.py
+split_routes_jobs.py
+split_routes_pages.py
+split_test_routes.py
+
+# ──────────────────────────────────────
+# Sentry sourcemaps
+# ──────────────────────────────────────
+.sentryclirc
