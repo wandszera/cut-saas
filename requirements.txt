@@ -13,3 +13,4 @@ yt-dlp
 openai-whisper
 faster-whisper
 ffmpeg-python
+sentry-sdk[fastapi]

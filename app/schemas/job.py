@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -61,6 +61,7 @@ class JobResponse(BaseModel):
     result_path: Optional[str] = None
     error_message: Optional[str] = None
     created_at: datetime
+    locked_at: datetime | None = None
+    locked_by: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

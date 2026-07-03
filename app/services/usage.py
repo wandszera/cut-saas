@@ -53,11 +53,62 @@ def record_usage_event(
     return event
 
 
+def check_and_send_quota_warnings(db: Session, workspace_id: int) -> None:
+    from app.services.quota import get_workspace_quota_status
+    from app.services.billing_emails import send_quota_warning_email
+    
+    quota = get_workspace_quota_status(db, workspace_id)
+    if quota.limit_video_minutes <= 0:
+        return
+
+    period_str = quota.period_start.isoformat()
+    
+    if quota.is_exceeded:
+        idempotency_key = f"quota_warning_email:{workspace_id}:{period_str}:100"
+        existing = db.query(UsageEvent).filter(UsageEvent.idempotency_key == idempotency_key).first()
+        if not existing:
+            try:
+                send_quota_warning_email(db, workspace_id, quota.used_video_minutes, quota.limit_video_minutes)
+                record_usage_event(
+                    db,
+                    workspace_id=workspace_id,
+                    job_id=None,
+                    event_type="quota_warning_sent",
+                    quantity=1,
+                    unit="email",
+                    idempotency_key=idempotency_key,
+                    details={"threshold": "100"},
+                )
+            except Exception as exc:
+                import logging
+                logging.getLogger("app.usage").exception("Falha ao enviar email de quota 100%: %s", exc)
+                
+    elif quota.is_near_limit:
+        idempotency_key = f"quota_warning_email:{workspace_id}:{period_str}:80"
+        existing = db.query(UsageEvent).filter(UsageEvent.idempotency_key == idempotency_key).first()
+        if not existing:
+            try:
+                send_quota_warning_email(db, workspace_id, quota.used_video_minutes, quota.limit_video_minutes)
+                record_usage_event(
+                    db,
+                    workspace_id=workspace_id,
+                    job_id=None,
+                    event_type="quota_warning_sent",
+                    quantity=1,
+                    unit="email",
+                    idempotency_key=idempotency_key,
+                    details={"threshold": "80"},
+                )
+            except Exception as exc:
+                import logging
+                logging.getLogger("app.usage").exception("Falha ao enviar email de quota 80%: %s", exc)
+
+
 def record_video_processed_usage(db: Session, job: Job, *, duration_seconds: float | None) -> UsageEvent | None:
     if duration_seconds is None:
         return None
     minutes = max(0.0, round(float(duration_seconds) / 60.0, 4))
-    return record_usage_event(
+    event = record_usage_event(
         db,
         workspace_id=job.workspace_id,
         job_id=job.id,
@@ -67,6 +118,9 @@ def record_video_processed_usage(db: Session, job: Job, *, duration_seconds: flo
         idempotency_key=f"job:{job.id}:video_processed",
         details={"duration_seconds": duration_seconds},
     )
+    if event and job.workspace_id:
+        check_and_send_quota_warnings(db, job.workspace_id)
+    return event
 
 
 def record_render_usage(db: Session, job: Job, clip: Clip) -> UsageEvent | None:

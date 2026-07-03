@@ -110,6 +110,8 @@ class SystemDiagnosticsTestCase(unittest.TestCase):
             patch("app.services.system_diagnostics._detect_ffmpeg", return_value={"name": "FFmpeg", "ok": True, "status": "ok", "detail": "ffmpeg"}),
             patch("app.services.system_diagnostics._detect_ffprobe", return_value={"name": "FFprobe", "ok": True, "status": "ok", "detail": "ffprobe"}),
             patch("app.services.system_diagnostics._detect_whisper", return_value={"name": "Transcricao", "ok": True, "status": "ok", "detail": "provider=auto"}),
+            patch("app.services.system_diagnostics._storage_readiness_item", return_value={"name": "Storage access", "ok": True, "status": "ok", "detail": ""}),
+            patch("app.services.system_diagnostics._worker_backlog_readiness_item", return_value={"name": "Worker backlog", "ok": True, "status": "ok", "detail": ""}),
             patch("app.services.system_diagnostics.settings") as mocked_settings,
         ):
             mocked_settings.pipeline_queue_backend = "worker"

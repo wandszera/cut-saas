@@ -31,6 +31,7 @@ class StorageTestCase(unittest.TestCase):
 
         storage.settings.base_data_dir = str(base_dir)
         storage.settings.storage_backend = "local"
+        storage.get_storage.cache_clear()
         try:
             signed_url = build_static_url(str(path))
             self.assertIsNotNone(signed_url)
@@ -38,6 +39,7 @@ class StorageTestCase(unittest.TestCase):
         finally:
             storage.settings.base_data_dir = original_base_dir
             storage.settings.storage_backend = original_backend
+            storage.get_storage.cache_clear()
 
     def test_build_static_url_uses_signed_urls_for_private_storage_backends(self):
         original_backend = storage.settings.storage_backend
@@ -48,6 +50,7 @@ class StorageTestCase(unittest.TestCase):
         path.write_bytes(b"clip")
         storage.settings.base_data_dir = str(base_dir)
         storage.settings.storage_backend = "r2"
+        storage.get_storage.cache_clear()
         try:
             with patch("app.utils.media_urls.get_storage", return_value=local_storage):
                 signed_url = build_static_url(str(path))
@@ -56,6 +59,7 @@ class StorageTestCase(unittest.TestCase):
         finally:
             storage.settings.storage_backend = original_backend
             storage.settings.base_data_dir = original_base_dir
+            storage.get_storage.cache_clear()
 
     def test_remote_storage_backends_require_bucket(self):
         with self.assertRaises(ValueError):

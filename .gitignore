@@ -17,5 +17,6 @@ data/exports/*
 data/temp/*
 app/cookies/*
 !app/cookies/.gitkeep
+app/cookies/youtube_cookies.txt
 tests/.tmp/
 test_databases/

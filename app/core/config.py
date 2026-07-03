@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_price_starter: str | None = None
+    stripe_price_pro: str | None = None
+    trial_days: int = 0
     mercado_pago_access_token: str | None = None
     mercado_pago_webhook_secret: str | None = None
     artifact_retention_days: int = 30
@@ -56,6 +58,8 @@ class Settings(BaseSettings):
     ytdlp_cookies_browser: str | None = None
     ytdlp_cookies_browser_profile: str | None = None
     ytdlp_verbose: bool = True
+    youtube_subtitle_enabled: bool = True
+    youtube_subtitle_languages: str = "pt,pt-BR,en"
     transcription_provider: TranscriptionProvider = "auto"
     whisper_model: str = "base"
     whisper_precision: WhisperPrecisionMode = "auto"
@@ -84,6 +88,11 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
+
+    # Sentry — deixe em branco para desativar monitoramento
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.1  # 10% das transações
+    sentry_profiles_sample_rate: float = 0.1  # 10% de profiling
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -134,6 +143,8 @@ class Settings(BaseSettings):
             raise ValueError("STRIPE_SECRET_KEY is required when BILLING_PROVIDER=stripe")
         if self.billing_provider == "stripe" and not self.stripe_price_starter:
             raise ValueError("STRIPE_PRICE_STARTER is required when BILLING_PROVIDER=stripe")
+        if self.billing_provider == "stripe" and not self.stripe_price_pro:
+            raise ValueError("STRIPE_PRICE_PRO is required when BILLING_PROVIDER=stripe")
         if self.billing_provider == "mercado_pago" and not self.mercado_pago_access_token:
             raise ValueError("MERCADO_PAGO_ACCESS_TOKEN is required when BILLING_PROVIDER=mercado_pago")
         return self

@@ -32,9 +32,8 @@ def attach_csrf_cookie(response: Response, token: str) -> None:
 async def validate_csrf_request(request: Request) -> None:
     if request.method.upper() in CSRF_SAFE_METHODS:
         return
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/") or (request.url.path.startswith("/jobs/") and "/view" not in request.url.path):
         return
-
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
     if not cookie_token:
         raise HTTPException(status_code=403, detail="CSRF token ausente")

@@ -83,6 +83,8 @@ def complete_checkout_from_page(
         activate_checkout_session(db, session_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not success_url.startswith("/") or success_url.startswith("//"):
+        success_url = "/billing"
     separator = "&" if "?" in success_url else "?"
     return RedirectResponse(
         url=f"{success_url}{separator}{urlencode({'message': 'Assinatura ativada.', 'level': 'success'})}",

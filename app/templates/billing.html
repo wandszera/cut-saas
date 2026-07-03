@@ -86,27 +86,43 @@
             <h3>{{ plan.name }}</h3>
             <div class="board-item">
               <strong>Capacidade mensal</strong>
-              <p>{{ "%.0f"|format(plan.monthly_video_minutes) }} min/mes</p>
+              <p>{{ "%.0f"|format(plan.monthly_video_minutes) }} min/mês</p>
             </div>
             <div class="board-item">
               <strong>Investimento</strong>
               <p>
               {% if plan.monthly_price_cents %}
-                R$ {{ "%.2f"|format(plan.monthly_price_cents / 100) }}/mes
+                R$ {{ "%.2f"|format(plan.monthly_price_cents / 100) }}/mês
               {% else %}
-                1 teste gratis de ate 30 min
+                Grátis
               {% endif %}
               </p>
+            </div>
+            <div class="board-item">
+              <strong>Armazenamento privado</strong>
+              <p>{{ (plan.storage_limit_bytes / 1024 / 1024 / 1024)|int }} GB</p>
+            </div>
+            <div class="board-item">
+              <strong>Workspaces inclusos</strong>
+              <p>{{ plan.max_workspaces }}</p>
+            </div>
+            <div class="board-item">
+              <strong>Enriquecimento por LLM</strong>
+              <p>{% if plan.llm_enabled %}Disponível{% else %}Não disponível{% endif %}</p>
+            </div>
+            <div class="board-item">
+              <strong>Fila de processamento</strong>
+              <p>{% if plan.priority_queue %}Fila Prioritária{% else %}Fila Comum{% endif %}</p>
             </div>
             <div class="board-item">
               <strong>Melhor encaixe</strong>
               <p>
                 {% if plan.slug == "free" %}
-                  Teste inicial de 1 video com ate 30 minutos antes de ativar o billing.
+                  Teste inicial rápido antes de ativar o faturamento comercial.
                 {% elif plan.slug == "starter" %}
-                  Operacao enxuta com publicacao recorrente.
+                  Operação enxuta com publicação recorrente e enriquecimento básico.
                 {% elif plan.slug == "pro" %}
-                  Volume editorial continuo e mais previsibilidade.
+                  Volume editorial contínuo, fila prioritária e máximo espaço.
                 {% else %}
                   Workspace com demanda alta e time em escala.
                 {% endif %}
@@ -115,14 +131,14 @@
             {% if plan.slug == subscription.plan and subscription.status in ["active", "trialing"] %}
               <div class="board-item">
                 <strong>Status</strong>
-                <p>Plano atual em operacao.</p>
+                <p>Plano atual em operação.</p>
               </div>
             {% else %}
               <form method="post" action="/billing/checkout" style="margin-top: 14px;">
                 <input type="hidden" name="plan" value="{{ plan.slug }}" />
                 <button type="submit">
                   {% if plan.slug == "free" %}
-                    Ativar Free com cartao
+                    Voltar para o Free
                   {% else %}
                     Assinar {{ plan.name }}
                   {% endif %}

@@ -3,7 +3,7 @@ import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.web.routes_pages import router as pages_router
+from app.web.pages import router as pages_router
 
 
 class PublicIndexTestCase(unittest.TestCase):

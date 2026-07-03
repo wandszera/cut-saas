@@ -210,7 +210,7 @@ class BillingTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("1 video de ate 30 minutos sem cartao", response.text)
         self.assertIn("Sem assinatura ativa", response.text)
-        self.assertIn("Ativar Free com cartao", response.text)
+        self.assertIn("Voltar para o Free", response.text)
         self.assertIn("teste gratis", response.text)
 
     def test_billing_page_uses_human_status_label_for_checkout_pending(self):
@@ -360,14 +360,14 @@ class BillingTestCase(unittest.TestCase):
             "Muitas alteracoes de billing em pouco tempo. Tente novamente em instantes.",
         )
 
-    def test_mercado_pago_billing_provider_fails_fast_until_adapter_exists(self):
+    def test_mercado_pago_billing_provider_creates_checkout_successfully(self):
         original_provider = billing_service.settings.billing_provider
         billing_service.settings.billing_provider = "mercado_pago"
         db = self.TestingSessionLocal()
         try:
-            with self.assertRaises(ValueError) as ctx:
-                create_checkout_session(db, workspace_id=self.workspace_id, plan_slug="starter")
-            self.assertIn("ainda nao implementado", str(ctx.exception))
+            session = create_checkout_session(db, workspace_id=self.workspace_id, plan_slug="starter")
+            self.assertEqual(session.provider, "mercado_pago")
+            self.assertIn("mp_pre_", session.checkout_id)
         finally:
             billing_service.settings.billing_provider = original_provider
             db.close()

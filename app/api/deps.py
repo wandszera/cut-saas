@@ -53,10 +53,17 @@ def require_current_workspace(
     return current_workspace
 
 
+def require_admin_user(current_user: User = Depends(require_current_user)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+    return current_user
+
+
 __all__ = [
     "get_db",
     "get_current_user",
     "get_current_workspace",
     "require_current_user",
     "require_current_workspace",
+    "require_admin_user",
 ]

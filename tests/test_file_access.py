@@ -53,9 +53,11 @@ class FileAccessTestCase(unittest.TestCase):
         self.original_base_dir = storage.settings.base_data_dir
         self.base_dir = Path("test_databases") / f"files_{uuid4().hex}"
         storage.settings.base_data_dir = str(self.base_dir)
+        storage.get_storage.cache_clear()
 
     def tearDown(self):
         storage.settings.base_data_dir = self.original_base_dir
+        storage.get_storage.cache_clear()
 
     def _create_user_workspace(self, email: str):
         db = self.TestingSessionLocal()

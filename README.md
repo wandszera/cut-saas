@@ -1,403 +1,419 @@
-# Cut SaaS
+# 🎬 Cut SaaS — AI-Powered Video Clip Engine
 
-Aplicacao local em FastAPI para baixar videos do YouTube, transcrever o audio, sugerir cortes e renderizar clips em formatos `short` e `long`.
+> **Hybrid heuristic + LLM scoring system** that automatically identifies, ranks, and renders the best viral clips from long-form videos — with a self-calibrating feedback loop that learns from editorial decisions.
 
-## Estado atual
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Tests](https://img.shields.io/badge/Tests-214_passing-brightgreen?logo=pytest&logoColor=white)](#testing)
+[![LLM](https://img.shields.io/badge/LLM-OpenAI_%7C_Ollama-blueviolet?logo=openai&logoColor=white)](#llm-architecture)
 
-O projeto ja evoluiu de ferramenta local para uma base SaaS inicial. Hoje existem contas, sessoes, workspaces, isolamento de dados, migrations com Alembic, fila com worker separado, storage privado, URLs assinadas, usage events, quotas, billing inicial e telas web operacionais.
+---
 
-A suite local foi verificada com:
+## What This Project Demonstrates
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+This is a **production-grade SaaS platform** built end-to-end as a solo developer. It combines NLP heuristics, LLM-as-judge evaluation, and real-time feedback loops into a unified scoring engine — the kind of system that sits at the intersection of **classical ML engineering and modern LLM integration**.
+
+### Key Engineering Highlights
+
+| Area | What I Built |
+|---|---|
+| **Hybrid Scoring Engine** | 17-dimension heuristic scorer + LLM reranking with dynamically adjustable weight blending (50/50 → 80/20) |
+| **LLM-Guided Heuristics** | LLM pre-analyzes full transcripts to extract topics, viral angles, and promising time ranges — feeding structured signals *into* the heuristic pipeline |
+| **Self-Calibrating Feedback Loop** | User approvals/rejections automatically tune scoring multipliers, duration preferences, diversity penalties, and heuristic-vs-LLM trust ratio |
+| **Structured Output Parsing** | Enforced JSON responses from Ollama (`format: "json"`) and OpenAI (`response_format: json_object`) with validation and graceful fallback |
+| **Circuit Breaker Pattern** | Auto-skip LLM enrichment after 2 consecutive failures; local keyword generation fallback when rate-limited |
+| **Durable Pipeline** | 5-step pipeline with pessimistic DB locking, per-step retry, cooperative cancellation, idempotent re-execution, and stale lock recovery |
+| **Multi-Tenant SaaS** | Accounts, workspaces, workspace-scoped data isolation, billing (Stripe + Mercado Pago), usage quotas, and signed URLs |
+
+---
+
+## Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         FastAPI Web Server                          │
+│  ┌──────────┐  ┌──────────────┐  ┌─────────┐  ┌─────────────────┐  │
+│  │ Auth &   │  │  Job Create  │  │Dashboard│  │   Billing API   │  │
+│  │ Sessions │  │  & Monitor   │  │& Detail │  │ Stripe/MP/Mock  │  │
+│  └──────────┘  └──────────────┘  └─────────┘  └─────────────────┘  │
+└──────────────────────────┬───────────────────────────────────────────┘
+                           │ enqueue
+                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     Background Worker (Polling)                     │
+│                                                                     │
+│  ┌────────────┐  ┌──────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ Download   │  │ Extract  │  │ Transcribe   │  │  Analyze &   │  │
+│  │ (yt-dlp)   │→ │  Audio   │→ │  (Whisper)   │→ │   Score      │  │
+│  └────────────┘  └──────────┘  └──────────────┘  └──────┬───────┘  │
+│                                                         │          │
+│                  ┌──────────────────────────────────────┐│          │
+│                  │        LLM Enrichment (Optional)     ││          │
+│                  │  ┌─────────────────────────────────┐ ││          │
+│                  │  │ Transcript Insights → Heuristic │ │◄          │
+│                  │  │ Candidate Reranking → Hybrid    │ ││          │
+│                  │  │ Score Blending (H×0.65 + L×0.35)│ ││          │
+│                  │  └─────────────────────────────────┘ ││          │
+│                  └──────────────────────────────────────┘│          │
+│                                                         ▼          │
+│                                              ┌──────────────────┐  │
+│                                              │  Render (FFmpeg) │  │
+│                                              │  + ASS Subtitles │  │
+│                                              └──────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                       Feedback Loop                                 │
+│  ┌──────────────┐  ┌────────────────────┐  ┌─────────────────────┐  │
+│  │ User Reviews │→ │ Calibration Engine │→ │ Weight Adjustment   │  │
+│  │ approve/     │  │ (duration, opening │  │ (heuristic vs LLM   │  │
+│  │ reject/fav   │  │  diversity, context)│  │  trust ratio)       │  │
+│  └──────────────┘  └────────────────────┘  └─────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Resultado da ultima verificacao: `214 tests` passando.
+---
 
-O roadmap atualizado esta em `docs/saas-roadmap.md`. A prioridade atual e consolidar a base, validar staging com Postgres/API/worker separados, testar storage remoto e preparar um beta fechado com poucos usuarios.
+## LLM Architecture
 
-## O que o projeto faz
+This is the core of the system and what makes it different from a simple "send text to GPT" approach. The LLM is integrated at **three distinct layers**, each with a specific purpose:
 
-- cria jobs a partir de uma URL do YouTube;
-- permite upload local de videos;
-- autentica usuarios e isola dados por workspace;
-- baixa o video com `yt-dlp`;
-- extrai o audio;
-- transcreve com Whisper;
-- detecta um nicho do conteudo;
-- analisa a transcricao em chunks para videos longos;
-- gera candidatos de forma incremental, permitindo primeiros resultados antes do fim da analise inteira;
-- pontua os candidatos com heuristicas de gancho, clareza, fechamento, emocao e duracao;
-- separa analise heuristica de enriquecimento por LLM;
-- reranqueia candidatos com foco editorial para priorizar shorts mais enxutos, menos redundantes e com abertura mais forte;
-- renderiza clips com `ffmpeg`;
-- opcionalmente gera e queima legendas;
-- oferece render manual mesmo sem concluir a analise;
-- oferece interface web operacional com monitoramento, fila e endpoints HTTP;
-- mede uso por workspace, aplica quotas e suporta billing inicial.
+### Layer 1 — Transcript Insights (Pre-Analysis)
 
-## Stack
+Before any candidate is scored, the LLM receives the full transcript (up to 12K chars) and extracts structured editorial intelligence:
 
-- Python 3
-- FastAPI
-- SQLAlchemy
-- Jinja2 templates
-- SQLite local ou Postgres em staging/producao
-- `yt-dlp`
-- `openai-whisper`
-- `faster-whisper`
-- `ffmpeg`
+```python
+# app/services/transcript_insights.py
+{
+    "main_topics": ["tema 1", "tema 2"],
+    "viral_angles": ["ângulo viral"],
+    "priority_keywords": ["palavra-chave"],
+    "avoid_patterns": ["padrão a evitar"],
+    "promising_ranges": [
+        {"start_hint_seconds": 30, "end_hint_seconds": 95, "why": "gancho forte"}
+    ]
+}
+```
 
-## Estrutura principal
+These insights are **not used for final ranking** — they feed directly into the heuristic scoring engine as additional signal dimensions. This is a **"LLM-guided heuristic"** pattern: the LLM shapes what the deterministic scorer looks for, rather than replacing it.
 
-```text
+### Layer 2 — 17-Dimension Heuristic Scoring
+
+Each candidate clip is scored across 17 independent dimensions, each with its own function and tunable weight per niche:
+
+| # | Dimension | What It Measures |
+|---|---|---|
+| 1 | `hook_score` | Opening strength — questions, power words, weak-start penalties |
+| 2 | `opening_strength` | Informative vs. strong openings, contrast creation |
+| 3 | `clarity_score` | Word volume fit per mode (short: 35-220 words, long: 350-2500) |
+| 4 | `impact_score` | Impact keyword density with capped contribution |
+| 5 | `emotion_score` | Emotional keyword density |
+| 6 | `closure_score` | Clean endings, substance, weak-end penalties |
+| 7 | `continuity_penalty` | Penalizes mid-sentence starts/ends |
+| 8 | `format_bonus` | Mode-appropriate formatting (9:16 vs 16:9) |
+| 9 | `niche_bonus` | Keyword match against base + learned keywords |
+| 10 | `boundary_score` | Pause analysis for clean cut boundaries |
+| 11 | `information_density` | Lexical diversity ratio, punctuation density, pacing |
+| 12 | `repetition_penalty` | Filler word detection (Portuguese-specific) |
+| 13 | `context_dependency` | 20+ dependency patterns ("como eu falei", "isso aqui"…) |
+| 14 | `structure_bonus` | Structural markers ("primeiro", "segundo", "passo") |
+| 15 | `cta_penalty` | Call-to-action detection and penalization |
+| 16 | `transcript_context` | Alignment with LLM-extracted insights from Layer 1 |
+| 17 | `feedback_alignment` | Match against historically approved candidate profiles |
+
+After scoring, **diversity reranking** prevents near-duplicate candidates via greedy selection with time overlap + Jaccard text similarity + opening similarity penalties.
+
+### Layer 3 — LLM-as-Judge Reranking
+
+Top-N candidates (default: 12) are sent to the LLM for independent evaluation. The LLM acts as a "judge" that provides its own score, rationale, suggested title, and hook:
+
+```python
+# app/services/llm_analysis.py — Hybrid score blending
+hybrid_score = (heuristic_score × heuristic_weight) + (llm_score × llm_weight)
+# Default: 65% heuristic / 35% LLM
+# Dynamically adjusted to 50/50 → 80/20 based on user feedback
+```
+
+**The weight split is not static.** The feedback loop (see below) analyzes cases where heuristic and LLM disagree, then adjusts the blend based on which source better predicted the user's approve/reject decisions.
+
+### Resilience Patterns
+
+| Pattern | Implementation |
+|---|---|
+| **Circuit Breaker** | After 2 consecutive LLM failures, enrichment step auto-skips; pipeline continues with heuristic-only scores |
+| **Rate Limit Retry** | 3 attempts with incremental backoff (1.2s, 2.4s, 3.6s) on HTTP 429 |
+| **Graceful Degradation** | If LLM fails during niche creation, local keyword extraction runs as fallback |
+| **Structured Output Enforcement** | Ollama: `format: "json"` / OpenAI: `response_format: json_object` — both with JSON parse validation |
+| **Multi-Provider Abstraction** | Seamless switching between Ollama (local, e.g. Qwen 2.5 7B) and OpenAI via config |
+
+---
+
+## Self-Calibrating Feedback Loop
+
+The system doesn't just score clips — it **learns from editorial decisions** to improve future scoring. This happens through two complementary mechanisms:
+
+### 1. Analysis Calibration (`analysis_calibration.py`)
+
+Builds a calibration profile from reviewed candidates (approved/rejected/favorited) and adjusts:
+
+- **`preferred_short_max_seconds`** — Learns ideal short clip duration from P75 of approved candidates
+- **`diversity_penalty_multiplier`** — Increases when rejected candidates share similar openings (duplicate rate ≥ 25%)
+- **`informative_opening_multiplier`** — Increases when "informative" openings ("Hoje eu vou falar sobre…") are rejected more than approved
+- **`context_penalty_multiplier`** — Increases when context-dependent clips ("Isso que eu falei antes…") are consistently rejected
+- **Activation threshold**: Requires ≥ 3 reviews before influencing scores
+
+### 2. Niche Learning (`niche_learning.py`)
+
+Extracts recurring patterns from high-scoring approved candidates:
+
+- **Keyword Learning** — Discovers recurring tokens across ≥ 2 distinct jobs with ≥ 3 occurrences; these learned keywords are fed back into `niche_bonus` scoring
+- **Hybrid Weight Tuning** — Analyzes "divergent" candidates (where heuristic and LLM disagree by ≥ 1.2 points) and tracks which source better predicted user approval, then adjusts the heuristic/LLM weight blend accordingly (range: 50/50 to 80/20)
+- **Workspace-scoped** — All learning is isolated per workspace, so different content creators develop independent scoring profiles
+
+---
+
+## Pipeline Engineering
+
+### Durable 5-Step Pipeline
+
+```
+pending → downloading → extracting_audio → transcribing → analyzing → llm_enrichment → done
+```
+
+Each step is tracked as a `JobStep` database record with its own status, attempt count, error history, and timing metadata.
+
+| Feature | Implementation |
+|---|---|
+| **Pessimistic Locking** | Atomic SQL UPDATE with OR conditions (null lock / stale lock / own lock) prevents race conditions across workers |
+| **Worker Identity** | `f"{hostname}:{pid}:{uuid4().hex}"` — enables distributed tracing |
+| **Stale Lock Recovery** | Detects abandoned jobs via configurable timeout (default: 1h), resets to pending |
+| **Per-Step Retry** | `MAX_STEP_ATTEMPTS = 3` with exhaustion tracking |
+| **Cooperative Cancellation** | `_ensure_not_canceled()` polled between steps and within progress callbacks |
+| **Idempotent Re-execution** | Each step checks if output already exists and skips — safe restart from any point |
+| **Concurrency Control** | Configurable `max_concurrent_pipeline_jobs` with queue position tracking |
+| **Progress Heartbeats** | Real-time progress with percentage and human-readable status messages |
+| **Self-Healing Queue** | After each job completes/fails, automatically kicks next pending job |
+
+### Incremental Analysis for Long Videos
+
+Videos are split into 900-second chunks with 45-second overlap. Each chunk is independently: segmented → scored → reranked → deduplicated → persisted. Users see first results before the full video is processed.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **API Framework** | FastAPI + Uvicorn |
+| **Database** | SQLAlchemy ORM + Alembic migrations (SQLite dev / PostgreSQL prod) |
+| **LLM Providers** | OpenAI API, Ollama (local models like Qwen 2.5 7B) |
+| **Transcription** | OpenAI Whisper, faster-whisper (CUDA auto-detection, GPU/CPU) |
+| **Video Processing** | FFmpeg (clip rendering, audio extraction) |
+| **Video Download** | yt-dlp (with cookie/auth support) |
+| **Storage** | Local filesystem / Amazon S3 / Cloudflare R2 (Protocol-based abstraction) |
+| **Billing** | Stripe, Mercado Pago, Mock (Protocol-based adapter pattern) |
+| **Monitoring** | Sentry (error tracking + performance tracing) |
+| **Templates** | Jinja2 (server-rendered dashboard with real-time polling) |
+| **Testing** | unittest — 214 tests across 30 test files |
+
+---
+
+## Data Model
+
+11 SQLAlchemy models with full relationship mapping:
+
+```
+User ──┐
+       ├── WorkspaceMember ──── Workspace
+       │                            │
+       │                    ┌───────┼───────────┬────────────┐
+       │                    │       │           │            │
+       │                   Job  Subscription  UsageEvent  NicheDefinition
+       │                    │
+       │          ┌─────────┼──────────┐
+       │          │         │          │
+       │      Candidate   Clip     JobStep
+       │
+       └── NicheKeyword (learned keywords per niche)
+```
+
+### Key Design Decisions
+
+- **`Candidate` stores 6 sub-scores** individually (`hook_score`, `clarity_score`, `closure_score`, `emotion_score`, `duration_fit_score`, `heuristic_score`) plus `llm_score`, `llm_why`, `llm_title`, `llm_hook` — enabling post-hoc analysis of scoring quality
+- **`JobStep` stores JSON details** with heartbeat timestamps, progress messages, and duration metrics — the dashboard reads these for real-time monitoring
+- **`NicheDefinition` stores 18 scoring weights as JSON** — fully customizable per niche, per workspace
+- **`NicheKeyword` separates `base` vs `learned` sources** — the feedback loop only writes `learned` keywords, preserving original profiles
+
+---
+
+## Project Structure
+
+```
 app/
-  api/           rotas HTTP da API
-  core/          configuracoes
-  db/            conexao com banco
-  models/        modelos SQLAlchemy
-  schemas/       payloads Pydantic
-  services/      pipeline e regras de negocio
-  templates/     interface web server-rendered
-  utils/         utilitarios de arquivos, URLs e ambiente
-data/
-  downloads/     videos e audios baixados
-  transcripts/   transcricoes em JSON
-  clips/         clips renderizados
-  subtitles/     legendas geradas
-  uploads/       videos enviados manualmente
-docs/
-  saas-roadmap.md roadmap tecnico e proximas etapas
-video_cuts.db    banco SQLite local
+  api/             REST API routes (jobs, billing, files, candidates)
+  core/            Configuration (95+ settings with env-specific validation)
+  db/              Database connection + session management
+  models/          11 SQLAlchemy models with relationships
+  schemas/         Pydantic request/response schemas
+  services/        41 service modules — pipeline, scoring, LLM, billing, etc.
+  templates/       Server-rendered Jinja2 templates (dashboard, job detail, etc.)
+  utils/           Media URLs, timecodes, environment helpers
+  web/             Web routes, security (CSRF, sessions), template helpers
+  worker.py        Standalone background worker process
+tests/             214 tests across 30 files
+docs/              Technical roadmap
+alembic/           Database migrations
+scripts/           Utility scripts
 ```
 
-## Fluxo do pipeline
+---
 
-Estados tipicos do job:
+## Getting Started
 
-`pending -> downloading -> extracting_audio -> transcribing -> analyzing -> llm_enrichment -> done`
+### Prerequisites
 
-Estados adicionais usados na operacao:
+- Python 3.11+
+- `ffmpeg` on PATH
+- Node.js on PATH (required by yt-dlp)
 
-- `cancel_requested`: cancelamento solicitado e aguardando checkpoint seguro;
-- `canceled`: job encerrado manualmente;
-- `failed`: erro com `error_message`;
-- `pending` com mensagem de fila: aguardando slot de concorrencia.
-
-Observacoes operacionais importantes:
-
-- a etapa `analyzing` agora pode persistir candidatos por chunk em videos longos;
-- a etapa `llm_enrichment` e opcional e pode ser pulada sem bloquear o job;
-- jobs cancelados liberam slot para o proximo item da fila;
-- a pagina do job mostra heartbeat, progresso percentual e sinais de possivel travamento.
-
-## Qualidade editorial da analise
-
-A etapa de analise dos candidatos combina segmentacao com heuristicas editoriais para melhorar a qualidade dos cortes sugeridos.
-
-Hoje o ranking considera especialmente:
-
-- aderencia de duracao ao formato `short` ou `long`;
-- forca da abertura, distinguindo gancho real de abertura apenas informativa;
-- clareza de inicio e fechamento;
-- dependencia de contexto anterior, para evitar trechos que nao se sustentam sozinhos;
-- diversidade entre candidatos, reduzindo cortes muito parecidos entre si;
-- sinais de impacto, estrutura e densidade informacional.
-
-Na pratica, isso ajuda o sistema a:
-
-- reduzir cortes longos demais para `short`;
-- evitar repeticao de candidatos com a mesma abertura;
-- subir trechos com tensao, promessa, pergunta ou contraste logo no inicio;
-- filtrar melhor segmentos que dependem demais do contexto anterior.
-
-## Requisitos
-
-Antes de rodar, tenha instalado:
-
-- Python 3.11+ recomendado
-- `ffmpeg` disponivel no `PATH`
-- Node.js disponivel no `PATH` ou configurado via `NODE_BIN` / `NODE_EXTRA_PATH`
-
-Observacao:
-
-- o download do YouTube neste projeto valida a disponibilidade do Node antes de chamar o `yt-dlp`;
-- dependendo do video, cookies do navegador ou arquivo de cookies podem ser necessarios.
-
-## Instalacao
-
-### Windows PowerShell
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-### Linux/macOS
+### Installation
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Linux/macOS
+# .venv\Scripts\Activate.ps1     # Windows PowerShell
 pip install -r requirements.txt
 ```
 
-## Configuracao
+### Configuration
 
-O projeto usa variaveis de ambiente via `.env`.
-
-Exemplo minimo:
+Copy `.env.example` to `.env` and configure:
 
 ```env
-APP_NAME=Video Cuts Backend
+# Core
 ENVIRONMENT=local
-DEBUG=False
 DATABASE_URL=sqlite:///./video_cuts.db
-BASE_DATA_DIR=./data
-STORAGE_BACKEND=local
-ARTIFACT_RETENTION_DAYS=30
-PRESERVE_APPROVED_ARTIFACTS=True
 SECRET_KEY=dev-secret-change-me
-SESSION_COOKIE_SECURE=False
-NODE_BIN=node
-NODE_EXTRA_PATH=C:\Program Files\nodejs
-YTDLP_VERBOSE=True
-YTDLP_COOKIES_FILE=app/cookies/youtube_cookies.txt
-TRANSCRIPTION_PROVIDER=auto
+
+# LLM (choose one)
+LLM_PROVIDER=ollama              # Local models via Ollama
+LLM_MODEL=qwen2.5:7b
+# LLM_PROVIDER=openai            # Or use OpenAI
+# OPENAI_API_KEY=sk-...
+
+# Transcription
+TRANSCRIPTION_PROVIDER=auto      # auto-detects faster-whisper → openai-whisper
 WHISPER_MODEL=base
-WHISPER_PRECISION=auto
 ```
 
-Use `.env.example` como base para criar o `.env` local. Em `staging` e `production`, o app valida configuracoes seguras no startup:
+### Running
 
-- `ENVIRONMENT` deve ser `staging` ou `production`;
-- `DATABASE_URL` deve apontar para Postgres, preferencialmente `postgresql+psycopg://usuario:senha@host:5432/banco`;
-- `SECRET_KEY` deve ser unico e ter pelo menos 32 caracteres;
-- `DEBUG` deve ser `False`;
-- em `production`, `SESSION_COOKIE_SECURE` deve ser `True`.
-
-Variaveis relevantes:
-
-- `ENVIRONMENT`: `local`, `test`, `staging` ou `production`
-- `DATABASE_URL`: caminho do banco SQLite
-- `BASE_DATA_DIR`: pasta base dos artefatos gerados
-- `STORAGE_BACKEND`: `local`, `s3` ou `r2`; `local` usa `BASE_DATA_DIR`
-- `STORAGE_BUCKET`: nome do bucket quando `STORAGE_BACKEND` for `s3` ou `r2`
-- `STORAGE_PUBLIC_BASE_URL`: base publica opcional para objetos de storage
-- `ARTIFACT_RETENTION_DAYS`: idade minima dos jobs para limpeza de artefatos
-- `PRESERVE_APPROVED_ARTIFACTS`: preserva clips `ready`/`published` durante a limpeza
-- `SECRET_KEY`: chave usada para assinar sessoes
-- `SESSION_COOKIE_SECURE`: envia cookie de sessao apenas via HTTPS quando `True`
-- `NODE_BIN`: binario do Node
-- `NODE_EXTRA_PATH`: caminho adicional para encontrar o Node
-- `YTDLP_COOKIES_FILE`: arquivo de cookies para o `yt-dlp`
-- `YTDLP_COOKIES_BROWSER`: navegador para leitura de cookies
-- `YTDLP_COOKIES_BROWSER_PROFILE`: perfil do navegador
-- `YTDLP_VERBOSE`: logs detalhados do `yt-dlp`
-- `TRANSCRIPTION_PROVIDER`: `auto`, `openai_whisper` ou `faster_whisper`
-- `WHISPER_MODEL`: modelo do Whisper, por exemplo `base`
-- `WHISPER_PRECISION`: `auto`, `fp32` ou `fp16`
-- `LLM_TIMEOUT_SECONDS`: timeout das chamadas de enriquecimento por LLM
-- `MAX_CONCURRENT_PIPELINE_JOBS`: limite de jobs pesados rodando ao mesmo tempo
-- `PIPELINE_QUEUE_BACKEND`: `local` agenda pelo processo web; `worker` deixa jobs pendentes para `app.worker`
-
-Notas de transcricao:
-
-- `TRANSCRIPTION_PROVIDER=auto` tenta usar `faster-whisper` quando a dependencia estiver instalada e cai para `openai-whisper` caso contrario;
-- `WHISPER_PRECISION=auto` tenta usar `fp16` quando detectar GPU CUDA e usa `fp32` em CPU;
-- para staging focado em velocidade, o caminho recomendado e `TRANSCRIPTION_PROVIDER=auto` com `WHISPER_MODEL=base` ou `tiny`.
-
-## Como rodar
-
-Em desenvolvimento local, o app ainda cria/ajusta tabelas SQLite automaticamente para manter o ciclo curto:
-
-```powershell
+```bash
+# API server
 uvicorn app.main:app --reload
-```
 
-Depois abra:
-
-- interface web: `http://127.0.0.1:8000/`
-- healthcheck: `http://127.0.0.1:8000/health`
-- liveness: `http://127.0.0.1:8000/health/live`
-- readiness: `http://127.0.0.1:8000/health/ready`
-
-### Worker separado
-
-Para manter o comportamento local mais simples, `PIPELINE_QUEUE_BACKEND=local` ainda agenda o pipeline via `BackgroundTasks`.
-Para executar o processamento fora do servidor web, configure:
-
-```env
-PIPELINE_QUEUE_BACKEND=worker
-```
-
-Em um terminal, rode a API:
-
-```powershell
-uvicorn app.main:app --reload
-```
-
-Em outro terminal, rode o worker:
-
-```powershell
+# Background worker (separate terminal)
 python -m app.worker
 ```
 
-Com esse backend, a API cria o job como `pending` e o worker consome a fila pelo banco. Para processar no maximo um job e encerrar, use:
+Open `http://127.0.0.1:8000/` for the web interface.
 
-```powershell
-python -m app.worker --once
+---
+
+## Testing
+
+```bash
+python -m unittest discover -s tests -v
 ```
 
-### Arquivos privados
+**214 tests** covering:
 
-Arquivos de usuario nao sao mais servidos diretamente por `/static`. A interface usa URLs temporarias em `/files/download/{token}`; o endpoint exige sessao autenticada e valida se o arquivo pertence ao workspace atual antes de devolver o conteudo.
+| Test Area | Coverage |
+|---|---|
+| Scoring engine | All 17 dimensions + diversity reranking |
+| Billing | Stripe, Mock, and Mercado Pago adapters + webhook lifecycle |
+| Pipeline | Stale lock recovery, retry exhaustion, cancellation |
+| Feedback loop | Keyword learning, hybrid weight adjustment |
+| Workspace isolation | Cross-workspace data protection |
+| Auth & security | Login/logout, sessions, CORS, proxy trust |
+| Quotas | Usage limits, billing gating |
+| Storage | Local and S3 backends, signed URLs |
+| API routes | Job CRUD, candidates, full pipeline integration |
+| Web pages | Dashboard rendering, job detail page |
 
-### Planos e limites
+---
 
-O produto usa uma configuracao estatica inicial de planos em `app/services/plans.py`. Por enquanto todo workspace fica no plano `Free`, com limite mensal de 60 minutos de video processado.
+## API Reference
 
-Quando o workspace atinge o limite, novos jobs deixam de iniciar e a API retorna `402`. O dashboard exibe aviso a partir de 80% do consumo mensal. Arquivos ja gerados continuam disponiveis para download pelas URLs assinadas.
+<details>
+<summary><strong>Infrastructure</strong></summary>
 
-### Billing
+- `GET /health` — Full health check
+- `GET /health/live` — Liveness probe
+- `GET /health/ready` — Readiness probe
 
-A primeira integracao de billing usa um provider local `mock`, com o mesmo fluxo esperado para Stripe ou Mercado Pago: checkout, ativacao por retorno/webhook e atualizacao de assinatura.
+</details>
 
-Configure `BILLING_PROVIDER=mock` para o fluxo local. Para usar Stripe, configure `BILLING_PROVIDER=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` e o price do plano Starter em `STRIPE_PRICE_STARTER`. `mercado_pago` ja e um valor de configuracao validado, mas ainda exige adapter real antes de ativar checkout em producao.
+<details>
+<summary><strong>Jobs</strong></summary>
 
-- tela web: `/billing`
-- status API: `GET /api/billing/status`
-- checkout API: `POST /api/billing/checkout?plan=starter`
-- webhook: `POST /api/billing/webhook`
-- cancelamento: `POST /api/billing/cancel`
+- `POST /jobs/youtube` — Create job from YouTube URL
+- `GET /jobs/{id}` — Get job details
+- `GET /jobs/{id}/monitor` — Real-time job monitoring
+- `POST /jobs/{id}/analyze` — Trigger analysis
+- `POST /jobs/{id}/cancel` — Request cancellation
+- `GET /jobs/{id}/candidates` — List scored candidates
+- `GET /jobs/{id}/clips` — List rendered clips
 
-Assinaturas `active` ou `trialing` liberam o limite do plano contratado. Falha de pagamento marca a assinatura como `past_due`, fazendo o workspace voltar aos limites do plano `Free`. Cancelamentos marcam a assinatura como `canceled` e tambem retornam o workspace para o plano `Free`.
+</details>
 
-## Migrations
+<details>
+<summary><strong>Rendering</strong></summary>
 
-Em `staging` e `production`, aplique migrations antes de iniciar o servidor web:
+- `POST /jobs/{id}/render-candidate` — Render specific candidate
+- `POST /jobs/{id}/render-approved` — Render all approved candidates
+- `POST /jobs/{id}/render-manual` — Render custom time range
 
-```powershell
-alembic upgrade head
-```
+</details>
 
-Para criar uma nova migration depois de mudar modelos SQLAlchemy:
+<details>
+<summary><strong>Billing</strong></summary>
 
-```powershell
-alembic revision --autogenerate -m "descricao da mudanca"
-```
+- `GET /api/billing/status` — Billing overview
+- `POST /api/billing/checkout?plan=starter` — Start checkout
+- `POST /api/billing/webhook` — Payment webhook
+- `POST /api/billing/cancel` — Cancel subscription
 
-O arquivo `alembic/env.py` usa o mesmo `DATABASE_URL` da aplicacao, incluindo a normalizacao para `postgresql+psycopg://`.
+</details>
+
+---
 
 ## Roadmap
 
-O roadmap tecnico fica em `docs/saas-roadmap.md`.
+Current status: **6 milestones delivered**, preparing for closed beta.
 
-Resumo das proximas etapas:
+- [x] Multi-tenant SaaS (accounts, workspaces, data isolation)
+- [x] Production database (PostgreSQL + Alembic migrations)
+- [x] Durable pipeline (workers, queue, recovery)
+- [x] Private storage (S3/R2 + signed URLs + retention)
+- [x] Billing integration (Stripe + Mercado Pago)
+- [x] Operational dashboard (monitoring, heartbeat, progress)
+- [ ] Staging validation with real videos
+- [ ] Closed beta (3-5 users)
+- [ ] Sentry observability integration
+- [ ] Performance optimization (connection pooling, async metadata)
 
-- consolidar o marco atual em commits revisaveis;
-- validar staging com Postgres, Alembic, API e worker separado;
-- testar storage remoto S3/R2 com arquivos privados;
-- executar smoke tests com videos reais;
-- preparar beta fechado com 3 a 5 usuarios e metricas de custo/qualidade.
+---
 
-## Como usar pela interface web
+## License
 
-1. Abra a pagina inicial.
-2. Envie uma URL do YouTube.
-3. Aguarde o processamento do job.
-4. Abra a pagina de detalhe do job.
-5. Acompanhe pipeline, heartbeat, fila e progresso no monitoramento da pagina.
-6. Revise os candidatos sugeridos, que podem aparecer de forma incremental durante `analyzing`.
-7. Renderize um candidato ou informe tempos manualmente.
+This project is proprietary and not licensed for redistribution.
 
-Atalhos uteis da interface:
+---
 
-- cancelar processamento;
-- concluir analise sem LLM;
-- reprocessar etapa especifica;
-- render manual imediato mesmo sem transcricao finalizada.
+<div align="center">
 
-## Rotas principais da API
+**Built with** Python · FastAPI · SQLAlchemy · Whisper · OpenAI · Ollama · FFmpeg
 
-### Infra
-
-- `GET /health`
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /jobs/debug/node`
-
-### Jobs
-
-- `POST /jobs/youtube`
-- `GET /jobs/{job_id}`
-- `GET /jobs/{job_id}/monitor`
-- `POST /jobs/{job_id}/analyze`
-- `POST /jobs/{job_id}/cancel`
-- `GET /jobs/{job_id}/candidates`
-- `GET /jobs/{job_id}/approved-candidates`
-- `GET /jobs/{job_id}/clips`
-- `GET /jobs/health/pipeline`
-- `GET /jobs/dashboard/monitor`
-
-### Renderizacao
-
-- `POST /jobs/{job_id}/render`
-- `POST /jobs/{job_id}/render-candidate`
-- `POST /jobs/{job_id}/render-candidate-id/{candidate_id}`
-- `POST /jobs/{job_id}/render-approved`
-- `POST /jobs/{job_id}/render-manual`
-
-### Moderacao de candidatos
-
-- `POST /jobs/candidates/{candidate_id}/approve`
-- `POST /jobs/candidates/{candidate_id}/reject`
-- `POST /jobs/candidates/{candidate_id}/reset`
-
-### Nichos
-
-- `POST /jobs/niches/{niche}/learn-keywords`
-- `GET /jobs/niches/{niche}/keywords`
-
-## Exemplo rapido de uso da API
-
-Criar job:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/jobs/youtube" \
-  -H "Content-Type: application/json" \
-  -d "{\"url\":\"https://www.youtube.com/watch?v=VIDEO_ID\"}"
-```
-
-Analisar candidatos:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/jobs/1/analyze" \
-  -H "Content-Type: application/json" \
-  -d "{\"mode\":\"short\",\"top_n\":10}"
-```
-
-Renderizar um candidato:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/jobs/1/render-candidate" \
-  -H "Content-Type: application/json" \
-  -d "{\"candidate_index\":0,\"burn_subtitles\":true,\"mode\":\"short\"}"
-```
-
-## Como os dados sao salvos
-
-- o banco `video_cuts.db` guarda jobs, candidatos, clips e palavras-chave de nicho;
-- a pasta `data/downloads` guarda o material original baixado;
-- a pasta `data/transcripts` guarda os JSONs da transcricao;
-- a pasta `data/clips/job_<id>` guarda os videos renderizados;
-- a pasta `data/subtitles/job_<id>` guarda os arquivos `.ass`.
-
-## Observacoes de desenvolvimento
-
-- as tabelas sao criadas automaticamente ao iniciar a aplicacao;
-- as pastas base de dados sao garantidas no startup;
-- o painel web foi desenhado para operacao local, com polling parcial e foco em recuperar jobs longos;
-- para videos longos, a analise incremental por chunks reduz o tempo ate o primeiro candidato;
-- para beta/staging, a proxima validacao importante e rodar API e worker separados com Postgres;
-- para producao, ainda vale adicionar uma fila externa mais robusta e observabilidade estruturada.
+</div>

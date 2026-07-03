@@ -72,11 +72,20 @@ class ConfigTestCase(unittest.TestCase):
         with self.assertRaises(ValidationError):
             Settings(_env_file=None, billing_provider="stripe", stripe_secret_key="sk_test_123")
 
+        with self.assertRaises(ValidationError):
+            Settings(
+                _env_file=None,
+                billing_provider="stripe",
+                stripe_secret_key="sk_test_123",
+                stripe_price_starter="price_test_starter",
+            )
+
         settings = Settings(
             _env_file=None,
             billing_provider="stripe",
             stripe_secret_key="sk_test_123",
             stripe_price_starter="price_test_starter",
+            stripe_price_pro="price_test_pro",
         )
         self.assertEqual(settings.billing_provider, "stripe")
 

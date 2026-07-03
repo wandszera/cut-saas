@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.routes_jobs import router as jobs_router
+from app.api.jobs import router as jobs_router
 from app.db.database import Base, get_db
 from app.models.job import Job
 from app.models.candidate import Candidate

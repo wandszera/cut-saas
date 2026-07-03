@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.models.clip import Clip
 from app.models.job import Job
 from app.services.exports import build_job_export_bundle, list_job_export_bundles
+from app.services.storage import get_storage
 
 
 class ExportBundleTestCase(unittest.TestCase):
@@ -18,9 +19,11 @@ class ExportBundleTestCase(unittest.TestCase):
         self.temp_dir = Path("test_databases") / f"exports_{uuid4().hex}"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         settings.base_data_dir = str(self.temp_dir)
+        get_storage.cache_clear()
 
     def tearDown(self):
         settings.base_data_dir = self.original_base_data_dir
+        get_storage.cache_clear()
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 

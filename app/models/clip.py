@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.database import Base
@@ -29,5 +30,7 @@ class Clip(Base):
 
     subtitles_burned = Column(Boolean, default=False, nullable=False)
     output_path = Column(String, nullable=False)
+
+    job = relationship("Job", back_populates="clips")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

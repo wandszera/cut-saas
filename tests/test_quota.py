@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.routes_files import router as files_router
-from app.api.routes_jobs import router as jobs_router
+from app.api.jobs import router as jobs_router
 from app.db.database import Base, get_db
 from app.models.clip import Clip
 from app.models.job import Job
@@ -59,11 +59,13 @@ class QuotaTestCase(unittest.TestCase):
         self.original_base_dir = storage.settings.base_data_dir
         self.base_dir = Path("test_databases") / f"quota_files_{uuid4().hex}"
         storage.settings.base_data_dir = str(self.base_dir)
+        storage.get_storage.cache_clear()
         self.user_id, self.workspace_id = self._create_user_workspace()
         self.client.cookies.set("cut_saas_session", create_session_token(self.user_id))
 
     def tearDown(self):
         storage.settings.base_data_dir = self.original_base_dir
+        storage.get_storage.cache_clear()
 
     def _create_user_workspace(self) -> tuple[int, int]:
         db = self.TestingSessionLocal()

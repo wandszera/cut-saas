@@ -100,3 +100,56 @@ def ensure_workspace_can_start_job(db: Session, workspace_id: int) -> QuotaStatu
             ),
         )
     return status
+
+
+def ensure_workspace_has_storage_quota(db: Session, workspace_id: int, incoming_bytes: int = 0) -> None:
+    """Valida se o workspace possui cota de armazenamento suficiente para gravar novos arquivos."""
+    from app.services.plans import get_workspace_plan
+    from app.services.usage import calculate_workspace_storage_usage
+    
+    plan = get_workspace_plan(db, workspace_id)
+    usage = calculate_workspace_storage_usage(db, workspace_id)
+    total_expected = usage.total_bytes + incoming_bytes
+    
+    if total_expected >= plan.storage_limit_bytes:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                f"Limite de armazenamento do plano atingido ({usage.total_bytes / (1024*1024*1024):.2f} GB "
+                f"de {plan.storage_limit_bytes / (1024*1024*1024):.0f} GB). "
+                "Faça um upgrade de plano ou delete vídeos antigos para liberar espaço."
+            )
+        )
+
+
+def ensure_user_can_create_workspace(db: Session, user_id: int) -> None:
+    """Garante que o usuário não ultrapasse o limite de workspaces ativos do seu plano."""
+    from app.models.workspace_member import WorkspaceMember
+    from app.services.plans import get_workspace_plan
+
+    # Buscar workspaces em que o usuário é o dono (owner)
+    owned_memberships = (
+        db.query(WorkspaceMember)
+        .filter(
+            WorkspaceMember.user_id == user_id,
+            WorkspaceMember.role == "owner",
+            WorkspaceMember.status == "active"
+        )
+        .all()
+    )
+    
+    if not owned_memberships:
+        return
+
+    # Usamos o plano do primeiro workspace ativo para determinar o limite do usuário
+    primary_workspace_id = owned_memberships[0].workspace_id
+    plan = get_workspace_plan(db, primary_workspace_id)
+    
+    if len(owned_memberships) >= plan.max_workspaces:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Seu plano atual ({plan.name}) permite no máximo {plan.max_workspaces} workspace(s). "
+                "Faça um upgrade para criar workspaces adicionais."
+            )
+        )

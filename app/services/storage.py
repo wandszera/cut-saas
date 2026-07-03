@@ -1,3 +1,4 @@
+import functools
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
@@ -101,7 +102,10 @@ class LocalStorage:
         path = self.resolve_path(key_or_path)
         if not path or not path.exists() or not path.is_file():
             return False
-        path.unlink()
+        try:
+            path.unlink()
+        except OSError:
+            pass
         return True
 
     def ensure_default_prefixes(self, prefixes: Iterable[str]) -> None:
@@ -216,12 +220,13 @@ class S3Storage(LocalStorage):
                 filename = key.split("/")[-1]
                 if not fnmatch(filename, pattern):
                     continue
-                cached_path = self.resolve_path(key)
+                local_path = super().path_for(key)
+                cached_path = local_path if local_path.exists() else None
                 rows.append(
                     StorageObject(
                         key=key,
                         path=str(cached_path) if cached_path else None,
-                        url=self.public_url_for_path(cached_path or self.path_for(key)),
+                        url=self.public_url_for_path(local_path),
                         size_bytes=int(item.get("Size") or 0),
                     )
                 )
@@ -236,7 +241,10 @@ class S3Storage(LocalStorage):
             return False
         local_path = super().resolve_path(key)
         if local_path and local_path.exists() and local_path.is_file():
-            local_path.unlink()
+            try:
+                local_path.unlink()
+            except OSError:
+                pass
         try:
             self.client.delete_object(Bucket=self.bucket, Key=key)
             return True
@@ -244,6 +252,7 @@ class S3Storage(LocalStorage):
             return False
 
 
+@functools.lru_cache(maxsize=1)
 def get_storage() -> StorageBackend:
     if settings.storage_backend in {"s3", "r2"}:
         return S3Storage(

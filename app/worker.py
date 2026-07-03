@@ -6,17 +6,9 @@ import time
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.sentry import capture_exception, init_sentry
 from app.db.database import Base, SessionLocal, engine
-from app.db.migrations import (
-    ensure_candidate_editorial_columns,
-    ensure_clip_editorial_columns,
-    ensure_job_insights_columns,
-    ensure_job_workspace_columns,
-    ensure_niche_definition_columns,
-    ensure_niche_keyword_workspace_columns,
-    ensure_saas_account_tables,
-    ensure_usage_event_table,
-)
+
 from app.models.candidate import Candidate
 from app.models.clip import Clip
 from app.models.job import Job
@@ -27,7 +19,12 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
 from app.services.niche_registry import sync_builtin_niches
-from app.services.pipeline import PIPELINE_WORKER_ID, process_job_pipeline, recover_stale_pipeline_jobs
+from app.services.pipeline import (
+    PIPELINE_WORKER_ID,
+    _try_acquire_job_lock,
+    process_job_pipeline,
+    recover_stale_pipeline_jobs,
+)
 from app.services.retention import cleanup_expired_artifacts
 from app.utils.file_manager import ensure_directories
 
@@ -49,27 +46,31 @@ def _log_worker_event(event: str, **payload) -> None:
 def initialize_worker_runtime() -> None:
     if not settings.is_deployed_environment:
         Base.metadata.create_all(bind=engine)
-        ensure_job_insights_columns()
-        ensure_job_workspace_columns()
-        ensure_candidate_editorial_columns()
-        ensure_clip_editorial_columns()
-        ensure_niche_definition_columns()
-        ensure_niche_keyword_workspace_columns()
-        ensure_saas_account_tables()
-        ensure_usage_event_table()
     ensure_directories()
     with SessionLocal() as db:
         sync_builtin_niches(db)
 
+    # Sentry — integração SQLAlchemy rastreia queries com erro no worker
+    try:
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        _integrations = [SqlalchemyIntegration()]
+    except ImportError:
+        _integrations = []
+    init_sentry(integrations=_integrations)
+
 
 def get_next_pending_job_id(db: Session) -> int | None:
-    job = (
-        db.query(Job)
+    jobs = (
+        db.query(Job.id)
         .filter(Job.status == "pending")
         .order_by(Job.created_at.asc(), Job.id.asc())
-        .first()
+        .limit(10)
+        .all()
     )
-    return job.id if job else None
+    for (job_id,) in jobs:
+        if _try_acquire_job_lock(db, job_id, worker_id=PIPELINE_WORKER_ID):
+            return job_id
+    return None
 
 
 def run_worker_once() -> bool:
@@ -78,6 +79,9 @@ def run_worker_once() -> bool:
         recovered_jobs = recover_stale_pipeline_jobs(db)
         cleanup_expired_artifacts(db)
         job_id = get_next_pending_job_id(db)
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -93,7 +97,8 @@ def run_worker_once() -> bool:
         process_job_pipeline(job_id, worker_id=PIPELINE_WORKER_ID)
     except Exception as exc:
         _log_worker_event("worker_job_failed", job_id=job_id, error=str(exc))
-        raise
+        capture_exception(exc)  # envia ao Sentry sem derrubar o worker
+        return False  # aborta este ciclo mas o loop continua
     _log_worker_event("worker_job_completed", job_id=job_id)
     return True
 

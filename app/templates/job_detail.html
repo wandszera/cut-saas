@@ -1527,6 +1527,9 @@
       <a href="#pipeline-card" class="back-btn">Pipeline</a>
       <a href="#editorial-queue-card" class="back-btn">Fila editorial</a>
       <a href="#clips-card" class="back-btn">Clips</a>
+      <form method="post" action="/jobs/{{ job.id }}/view/delete" onsubmit="return confirm('Atenção: A exclusão apagará permanentemente o vídeo e os cortes. Seus minutos de processamento já gastos não serão devolvidos. Deseja continuar?');" style="display: inline-block; margin: 0;">
+        <button type="submit" class="back-btn" style="color: #ff8c8c; border-color: rgba(255, 140, 140, 0.35); background: transparent; cursor: pointer;">Excluir Job</button>
+      </form>
     </div>
   </div>
 

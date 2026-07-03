@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Column, Integer, String, Float, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.database import Base
@@ -38,6 +39,8 @@ class Candidate(Base):
     status = Column(String, nullable=False, default="pending")  # pending, approved, rejected, rendered
     is_favorite = Column(Boolean, nullable=False, default=False)
     editorial_notes = Column(Text, nullable=True)
+
+    job = relationship("Job", back_populates="candidates")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

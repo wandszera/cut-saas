@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.models.subscription import Subscription
 from app.services.plans import ACTIVE_SUBSCRIPTION_STATUSES, get_plan, list_plans
 from app.services.quota import get_workspace_quota_status
+from app.services.billing_emails import send_billing_activation_email, send_billing_cancellation_email
+from app.services.billing_mercado_pago import MercadoPagoBillingAdapter
 
 
 CHECKOUT_PENDING_STATUS = "checkout_pending"
@@ -138,6 +140,7 @@ class StripeBillingAdapter:
     def _price_id_for_plan(self, plan_slug: str) -> str:
         price_ids = {
             "starter": settings.stripe_price_starter,
+            "pro": settings.stripe_price_pro,
         }
         price_id = price_ids.get(plan_slug)
         if not price_id:
@@ -192,6 +195,8 @@ class StripeBillingAdapter:
             data["line_items[0][quantity]"] = "1"
             data["subscription_data[metadata][workspace_id]"] = str(workspace_id)
             data["subscription_data[metadata][plan_slug]"] = plan_slug
+            if settings.trial_days > 0:
+                data["subscription_data[trial_period_days]"] = str(settings.trial_days)
         payload = self._post_checkout(data)
         checkout_id = payload.get("id")
         checkout_url = payload.get("url")
@@ -271,6 +276,7 @@ class StripeBillingAdapter:
 PROVIDER_ADAPTERS: dict[str, BillingProviderAdapter] = {
     "mock": MockBillingAdapter(),
     "stripe": StripeBillingAdapter(),
+    "mercado_pago": MercadoPagoBillingAdapter(),
 }
 SUPPORTED_BILLING_PROVIDERS = set(PROVIDER_ADAPTERS)
 
@@ -387,15 +393,26 @@ def activate_checkout_session(db: Session, checkout_id: str) -> Subscription:
     if not subscription:
         raise ValueError("Sessao de checkout nao encontrada")
 
-    subscription.status = ACTIVE_STATUS
-    subscription.provider_customer_id = subscription.provider_customer_id or f"mock_cus_{subscription.workspace_id}"
     if subscription.plan_slug == "free":
+        subscription.status = ACTIVE_STATUS
+        subscription.provider_customer_id = subscription.provider_customer_id or f"mock_cus_{subscription.workspace_id}"
         subscription.current_period_end = None
     else:
+        subscription.provider_customer_id = subscription.provider_customer_id or f"mock_cus_{subscription.workspace_id}"
         subscription.provider_subscription_id = subscription.provider_subscription_id or f"mock_sub_{uuid4().hex}"
-        subscription.current_period_end = datetime.now(UTC) + timedelta(days=30)
+        if settings.trial_days > 0:
+            subscription.status = "trialing"
+            subscription.current_period_end = datetime.now(UTC) + timedelta(days=settings.trial_days)
+        else:
+            subscription.status = ACTIVE_STATUS
+            subscription.current_period_end = datetime.now(UTC) + timedelta(days=30)
     db.commit()
     db.refresh(subscription)
+    try:
+        send_billing_activation_email(db, subscription.workspace_id, get_plan(subscription.plan_slug).name)
+    except Exception as exc:
+        import logging
+        logging.getLogger("app.billing").exception("Falha ao enviar email de ativacao: %s", exc)
     return subscription
 
 
@@ -414,6 +431,11 @@ def cancel_current_subscription(db: Session, workspace_id: int) -> Subscription:
     subscription.current_period_end = datetime.now(UTC)
     db.commit()
     db.refresh(subscription)
+    try:
+        send_billing_cancellation_email(db, subscription.workspace_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger("app.billing").exception("Falha ao enviar email de cancelamento: %s", exc)
     return subscription
 
 
@@ -476,6 +498,17 @@ def apply_billing_webhook(db: Session, payload: dict) -> Subscription:
 
     db.commit()
     db.refresh(subscription)
+
+    # Disparar emails via webhook
+    try:
+        if webhook.event_type in {"checkout.session.completed", "customer.subscription.created", "customer.subscription.updated"}:
+            send_billing_activation_email(db, subscription.workspace_id, get_plan(subscription.plan_slug).name)
+        elif webhook.event_type in {"customer.subscription.deleted", "customer.subscription.canceled"}:
+            send_billing_cancellation_email(db, subscription.workspace_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger("app.billing").exception("Falha ao enviar email no webhook: %s", exc)
+
     return subscription
 
 
@@ -491,6 +524,10 @@ def build_billing_overview(db: Session, workspace_id: int) -> dict:
                 "name": plan.name,
                 "monthly_video_minutes": plan.monthly_video_minutes,
                 "monthly_price_cents": plan.monthly_price_cents,
+                "storage_limit_bytes": plan.storage_limit_bytes,
+                "max_workspaces": plan.max_workspaces,
+                "llm_enabled": plan.llm_enabled,
+                "priority_queue": plan.priority_queue,
             }
             for plan in list_plans()
         ],

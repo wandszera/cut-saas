@@ -1,6 +1,7 @@
 import json
+import time
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any
 
 from app.core.config import settings
@@ -10,6 +11,7 @@ _MODEL_CACHE: dict[str, Any] = {}
 _MODEL_CACHE_LOCK = Lock()
 _DEVICE_CAPABILITY_CACHE: bool | None = None
 _DEVICE_CAPABILITY_LOCK = Lock()
+_PROGRESS_HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 
 def _format_segment(segment: dict[str, Any]) -> dict[str, Any]:
@@ -164,6 +166,126 @@ def _transcribe_with_faster_whisper(model: Any, audio_file: Path) -> dict[str, A
     }
 
 
+def _run_transcription_job(
+    audio_file: Path,
+    output_path: Path,
+    job_id: int,
+    *,
+    progress_callback=None,
+) -> str:
+    provider = _resolve_transcription_provider()
+    use_fp16 = _resolve_fp16_mode(progress_callback=progress_callback)
+
+    if progress_callback:
+        progress_callback(f"Provider de transcricao selecionado: {provider}")
+
+    if provider == "faster_whisper":
+        model = _get_faster_whisper_model(progress_callback=progress_callback)
+    else:
+        model = _get_whisper_model(progress_callback=progress_callback)
+
+    if progress_callback:
+        progress_callback("Executando transcricao do audio")
+    if provider == "faster_whisper":
+        result = _transcribe_with_faster_whisper(model, audio_file)
+    else:
+        result = _transcribe_with_openai_whisper(model, audio_file, use_fp16=use_fp16)
+
+    if progress_callback:
+        progress_callback("Processando segmentos e consolidando texto")
+    segments = [_format_segment(seg) for seg in result.get("segments", [])]
+
+    transcript_data = {
+        "job_id": job_id,
+        "audio_path": str(audio_file),
+        "language": result.get("language"),
+        "text": result.get("text", "").strip(),
+        "segments_count": len(segments),
+        "segments": segments,
+    }
+
+    if progress_callback:
+        progress_callback("Salvando transcricao em JSON")
+    with open(output_path, "w", encoding="utf-8") as file_handle:
+        json.dump(transcript_data, file_handle, ensure_ascii=False, indent=2)
+
+    get_storage().sync_path(output_path)
+    if progress_callback:
+        progress_callback("Transcricao finalizada")
+    return str(output_path)
+
+
+def _transcribe_with_heartbeat(
+    audio_file: Path,
+    output_path: Path,
+    job_id: int,
+    *,
+    progress_callback=None,
+) -> str:
+    if progress_callback is None:
+        return _run_transcription_job(audio_file, output_path, job_id)
+
+    shared_state: dict[str, list[str] | str | None] = {"message": None, "pending_messages": []}
+    result_holder: dict[str, str] = {}
+    error_holder: dict[str, Exception] = {}
+
+    def _thread_progress(message: str) -> None:
+        shared_state["message"] = message
+        pending_messages = shared_state["pending_messages"]
+        assert isinstance(pending_messages, list)
+        pending_messages.append(message)
+
+    def _worker() -> None:
+        try:
+            result_holder["path"] = _run_transcription_job(
+                audio_file,
+                output_path,
+                job_id,
+                progress_callback=_thread_progress,
+            )
+        except Exception as exc:  # pragma: no cover
+            error_holder["error"] = exc
+
+    worker = Thread(target=_worker, daemon=True)
+    worker.start()
+
+    last_message = None
+    last_emitted_at = 0.0
+
+    while worker.is_alive():
+        pending_messages = shared_state["pending_messages"]
+        assert isinstance(pending_messages, list)
+        while pending_messages:
+            message = pending_messages.pop(0)
+            progress_callback(message)
+            last_message = message
+            last_emitted_at = time.monotonic()
+
+        message = shared_state["message"]
+        now = time.monotonic()
+        if message and (now - last_emitted_at) >= _PROGRESS_HEARTBEAT_INTERVAL_SECONDS:
+            progress_callback(message)
+            last_emitted_at = now
+        worker.join(timeout=max(0.05, min(1.0, _PROGRESS_HEARTBEAT_INTERVAL_SECONDS / 2)))
+
+    pending_messages = shared_state["pending_messages"]
+    assert isinstance(pending_messages, list)
+    while pending_messages:
+        message = pending_messages.pop(0)
+        progress_callback(message)
+        last_message = message
+
+    final_message = shared_state["message"]
+    if final_message and final_message != last_message:
+        progress_callback(final_message)
+
+    error = error_holder.get("error")
+    if error is not None:
+        raise error
+
+    return result_holder["path"]
+
+
 def transcribe_audio(
     audio_path: str,
     job_id: int,
@@ -171,57 +293,22 @@ def transcribe_audio(
     progress_callback=None,
 ) -> str:
     """
-    Transcreve um arquivo de áudio com Whisper e salva o resultado em JSON.
+    Transcreve um arquivo de audio com Whisper e salva o resultado em JSON.
     """
     if progress_callback:
         progress_callback("Validando arquivo de audio")
     audio_file = Path(audio_path)
     if not audio_file.exists():
-        raise FileNotFoundError(f"Áudio não encontrado: {audio_file}")
+        raise FileNotFoundError(f"Audio nao encontrado: {audio_file}")
 
     output_path = get_storage().path_for(normalize_storage_key("transcripts", f"job_{job_id}.json"))
 
     try:
-        provider = _resolve_transcription_provider()
-        use_fp16 = _resolve_fp16_mode(progress_callback=progress_callback)
-
-        if progress_callback:
-            progress_callback(f"Provider de transcricao selecionado: {provider}")
-
-        if provider == "faster_whisper":
-            model = _get_faster_whisper_model(progress_callback=progress_callback)
-        else:
-            model = _get_whisper_model(progress_callback=progress_callback)
-
-        if progress_callback:
-            progress_callback("Executando transcricao do audio")
-        if provider == "faster_whisper":
-            result = _transcribe_with_faster_whisper(model, audio_file)
-        else:
-            result = _transcribe_with_openai_whisper(model, audio_file, use_fp16=use_fp16)
-
-        if progress_callback:
-            progress_callback("Processando segmentos e consolidando texto")
-        segments = [_format_segment(seg) for seg in result.get("segments", [])]
-
-        transcript_data = {
-            "job_id": job_id,
-            "audio_path": str(audio_file),
-            "language": result.get("language"),
-            "text": result.get("text", "").strip(),
-            "segments_count": len(segments),
-            "segments": segments,
-        }
-
-        if progress_callback:
-            progress_callback("Salvando transcricao em JSON")
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(transcript_data, f, ensure_ascii=False, indent=2)
-
-        get_storage().sync_path(output_path)
-        if progress_callback:
-            progress_callback("Transcricao finalizada")
-        return str(output_path)
-
-    except Exception as e:
-        raise RuntimeError(f"Erro ao transcrever áudio: {e}") from e
+        return _transcribe_with_heartbeat(
+            audio_file,
+            output_path,
+            job_id,
+            progress_callback=progress_callback,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Erro ao transcrever audio: {exc}") from exc

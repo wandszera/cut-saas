@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Preços - Cut SaaS{% endblock %}
+
+{% block head %}
+  <style>
+    .pricing-container {
+      max-width: 1200px;
+      margin: 60px auto;
+      padding: 0 24px;
+    }
+
+    .pricing-header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    .pricing-header h1 {
+      font-family: var(--font-display);
+      font-size: 3.5rem;
+      color: var(--snow);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+      line-height: 1;
+    }
+
+    .pricing-header h1 span {
+      color: var(--acid);
+      display: block;
+    }
+
+    .pricing-header p {
+      color: var(--ghost);
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 30px;
+      align-items: stretch;
+    }
+
+    .pricing-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 40px 30px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(10, 10, 10, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+      transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(198, 255, 0, 0.3);
+      box-shadow: 0 30px 60px rgba(198, 255, 0, 0.05);
+    }
+
+    .pricing-card.popular {
+      border-color: rgba(198, 255, 0, 0.4);
+      background: rgba(10, 10, 10, 0.8);
+    }
+
+    .pricing-card.popular::before {
+      content: "POPULAR";
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      padding: 3px 10px;
+      background: var(--acid);
+      color: #000;
+      font-family: var(--font-mono);
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+    }
+
+    .pricing-card h2 {
+      font-family: var(--font-display);
+      font-size: 2.2rem;
+      text-transform: uppercase;
+      color: var(--snow);
+      margin: 0 0 10px 0;
+      letter-spacing: 0.04em;
+    }
+
+    .pricing-price {
+      font-family: var(--font-mono);
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--acid);
+      margin-bottom: 24px;
+      line-height: 1;
+    }
+
+    .pricing-price span {
+      font-size: 1rem;
+      color: var(--ghost);
+      font-weight: 400;
+    }
+
+    .pricing-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 40px 0;
+      flex-grow: 1;
+    }
+
+    .pricing-features li {
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--snow);
+      font-size: 0.94rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .pricing-features li span {
+      color: var(--ghost);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+    }
+
+    .pricing-cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 52px;
+      padding: 0 24px;
+      border: 1px solid var(--acid);
+      background: rgba(198, 255, 0, 0.08);
+      color: var(--snow);
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-decoration: none;
+      transition: background 0.2s ease, transform 0.2s ease, color 0.2s ease;
+      cursor: pointer;
+    }
+
+    .pricing-cta:hover {
+      background: var(--acid);
+      color: #000;
+      text-decoration: none;
+      transform: translate(-2px, -2px);
+    }
+
+    .pricing-card.popular .pricing-cta {
+      background: var(--acid);
+      color: #000;
+    }
+
+    .pricing-card.popular .pricing-cta:hover {
+      background: transparent;
+      color: var(--snow);
+      border-color: var(--acid);
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="pricing-container">
+    <header class="pricing-header">
+      <h1>Escolha a escala da <span>sua operação</span></h1>
+      <p>Corte vídeos, gere clipes rápidos e impulsione seus canais com qualidade editorial e previsibilidade operacional total.</p>
+    </header>
+
+    <div class="pricing-grid">
+      {% for plan in plans %}
+        <article class="pricing-card {% if plan.slug == 'starter' %}popular{% endif %}">
+          <h2>{{ plan.name }}</h2>
+          <div class="pricing-price">
+            {% if plan.monthly_price_cents %}
+              R$ {{ "%.2f"|format(plan.monthly_price_cents / 100) }}<span>/mês</span>
+            {% else %}
+              Grátis
+            {% endif %}
+          </div>
+          
+          <ul class="pricing-features">
+            <li>
+              Cota mensal de vídeo
+              <strong>{{ "%.0f"|format(plan.monthly_video_minutes) }} minutos</strong>
+            </li>
+            <li>
+              Espaço de armazenamento
+              <strong>{{ (plan.storage_limit_bytes / 1024 / 1024 / 1024)|int }} GB</strong>
+            </li>
+            <li>
+              Workspaces ativos
+              <strong>{{ plan.max_workspaces }} workspace(s)</strong>
+            </li>
+            <li>
+              Enriquecimento por LLM
+              <strong>{% if plan.llm_enabled %}Disponível{% else %}Não disponível{% endif %}</strong>
+            </li>
+            <li>
+              Prioridade na fila
+              <strong>{% if plan.priority_queue %}Fila Prioritária{% else %}Fila Comum{% endif %}</strong>
+            </li>
+          </ul>
+
+          {% if app_current_user %}
+            <a class="pricing-cta" href="/billing">Gerenciar no Billing</a>
+          {% else %}
+            <a class="pricing-cta" href="/register">Começar agora</a>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

@@ -4,24 +4,16 @@ from fastapi.staticfiles import StaticFiles
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.config import settings
+from app.core.sentry import init_sentry
 from app.db.database import Base, SessionLocal, engine
-from app.db.migrations import (
-    ensure_candidate_editorial_columns,
-    ensure_clip_editorial_columns,
-    ensure_job_workspace_columns,
-    ensure_job_insights_columns,
-    ensure_niche_definition_columns,
-    ensure_niche_keyword_workspace_columns,
-    ensure_saas_account_tables,
-    ensure_subscription_table,
-    ensure_usage_event_table,
-)
-from app.api.routes_jobs import router as jobs_router
+
+from app.api.jobs import router as jobs_router
 from app.api.routes_files import router as files_router
 from app.api.routes_billing import router as billing_router
 from app.web.routes_auth import router as auth_router
 from app.web.routes_billing import router as billing_pages_router
-from app.web.routes_pages import router as pages_router
+from app.web.routes_admin import router as admin_pages_router
+from app.web.pages import router as pages_router
 
 from app.models.job import Job
 from app.models.clip import Clip
@@ -46,18 +38,22 @@ from app.web.security import (
 
 if not settings.is_deployed_environment:
     Base.metadata.create_all(bind=engine)
-    ensure_job_insights_columns()
-    ensure_job_workspace_columns()
-    ensure_candidate_editorial_columns()
-    ensure_clip_editorial_columns()
-    ensure_niche_definition_columns()
-    ensure_niche_keyword_workspace_columns()
-    ensure_saas_account_tables()
-    ensure_usage_event_table()
-    ensure_subscription_table()
 ensure_directories()
 with SessionLocal() as db:
     sync_builtin_niches(db)
+
+# Sentry — inicializa apenas se SENTRY_DSN estiver definido no .env
+try:
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+    _sentry_integrations = [
+        StarletteIntegration(transaction_style="endpoint"),
+        FastApiIntegration(transaction_style="endpoint"),
+    ]
+except ImportError:
+    _sentry_integrations = []
+
+init_sentry(integrations=_sentry_integrations)
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.proxy_trusted_hosts_list or "127.0.0.1")
@@ -83,7 +79,8 @@ async def attach_authenticated_account_context(request: Request, call_next):
 
     user_id = get_user_id_from_session(request)
     if user_id is not None:
-        with SessionLocal() as db:
+        db = SessionLocal()
+        try:
             current_user = db.query(User).filter(User.id == user_id, User.status == "active").first()
             if current_user is not None:
                 membership = (
@@ -102,9 +99,12 @@ async def attach_authenticated_account_context(request: Request, call_next):
                         .filter(Workspace.id == membership.workspace_id, Workspace.status == "active")
                         .first()
                     )
+                db.expunge_all()
                 request.state.current_user = current_user
                 request.state.current_membership = membership
                 request.state.current_workspace = workspace
+        finally:
+            db.close()
 
     return await call_next(request)
 
@@ -112,6 +112,7 @@ app.include_router(auth_router)
 app.include_router(files_router)
 app.include_router(billing_router)
 app.include_router(billing_pages_router)
+app.include_router(admin_pages_router)
 app.include_router(jobs_router)
 app.include_router(pages_router)
 

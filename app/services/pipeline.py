@@ -18,11 +18,12 @@ from app.services.audio import extract_audio_from_video
 from app.services.candidates import ensure_default_candidates_for_job
 from app.services.niche_classifier import detect_niche
 from app.services.segmentation import load_transcript
+from app.services.subtitle_parser import parse_subtitle_to_transcript
 from app.services.transcript_insights import analyze_transcript_context
 from app.services.transcription import transcribe_audio
 from app.services.storage import get_storage
 from app.services.usage import record_llm_usage, record_storage_snapshot_usage, record_video_processed_usage
-from app.services.youtube import download_youtube_media
+from app.services.youtube import download_youtube_media, download_youtube_subtitle
 
 
 PIPELINE_STEPS = (
@@ -104,7 +105,7 @@ def _lock_stale_before() -> datetime:
 
 def _log_step_event(
     event: str,
-    job_id: int,
+    job: Job | int,
     step_name: str,
     *,
     attempt: int | None = None,
@@ -113,11 +114,16 @@ def _log_step_event(
     error_message: str | None = None,
     details: dict[str, Any] | None = None,
 ) -> None:
+    job_id = job.id if hasattr(job, "id") else job
+    workspace_id = job.workspace_id if hasattr(job, "workspace_id") else None
+
     payload: dict[str, Any] = {
         "event": event,
         "job_id": job_id,
         "step_name": step_name,
     }
+    if workspace_id is not None:
+        payload["workspace_id"] = workspace_id
     if attempt is not None:
         payload["attempt"] = attempt
     if status is not None:
@@ -132,20 +138,16 @@ def _log_step_event(
     logger.info(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
-def _log_pipeline_event(event: str, job_id: int, **payload) -> None:
+def _log_pipeline_event(event: str, job: Job | int, **payload) -> None:
+    job_id = job.id if hasattr(job, "id") else job
+    workspace_id = job.workspace_id if hasattr(job, "workspace_id") else None
+
     body: dict[str, Any] = {
         "event": event,
         "job_id": job_id,
     }
-    body.update(payload)
-    logger.info(json.dumps(body, ensure_ascii=False, sort_keys=True))
-
-
-def _log_pipeline_event(event: str, job_id: int, **payload) -> None:
-    body: dict[str, Any] = {
-        "event": event,
-        "job_id": job_id,
-    }
+    if workspace_id is not None:
+        body["workspace_id"] = workspace_id
     body.update(payload)
     logger.info(json.dumps(body, ensure_ascii=False, sort_keys=True))
 
@@ -172,7 +174,11 @@ def _try_acquire_job_lock(db: Session, job_id: int, worker_id: str | None = None
     updated = (
         db.query(Job)
         .filter(Job.id == job_id)
-        .filter(or_(Job.locked_at.is_(None), Job.locked_at < stale_before))
+        .filter(or_(
+            Job.locked_at.is_(None), 
+            Job.locked_at < stale_before,
+            Job.locked_by == lock_owner
+        ))
         .update(
             {
                 Job.locked_at: now,
@@ -242,7 +248,8 @@ def recover_stale_pipeline_jobs(db: Session) -> int:
 
 
 def _is_cancel_requested(job: Job) -> bool:
-    return (job.status or "").strip().lower() == "cancel_requested"
+    status = (job.status or "").strip().lower()
+    return status in ("cancel_requested", "canceled")
 
 
 def _ensure_not_canceled(db: Session, job: Job, step_name: str) -> None:
@@ -316,6 +323,8 @@ def mark_step_running(
         job.error_message = (
             f"Etapa '{step_name}' excedeu o limite de tentativas ({attempts}/{MAX_STEP_ATTEMPTS})"
         )
+        job.failed_step = step_name
+        job.failed_at = step.completed_at
         db.commit()
         db.refresh(step)
         _log_step_event(
@@ -491,6 +500,8 @@ def mark_step_failed(db: Session, job: Job, step_name: str, error: Exception) ->
 
     job.status = "failed"
     job.error_message = str(error)
+    job.failed_step = step_name
+    job.failed_at = step.completed_at
     db.commit()
     db.refresh(step)
     _log_step_event(
@@ -576,6 +587,8 @@ def reset_pipeline_state_from_step(
 
     job.status = "pending"
     job.error_message = None
+    job.failed_step = None
+    job.failed_at = None
     db.commit()
     return rows
 
@@ -701,15 +714,72 @@ def _run_download_step(db: Session, job: Job, *, force: bool = False) -> None:
     job.video_path = media["video_path"]
     job.title = media["title"]
     db.commit()
+
+    # Tenta baixar legenda do YouTube para evitar transcrição com Whisper
+    subtitle_path = None
+    subtitle_transcript_path = None
+    if settings.youtube_subtitle_enabled and not _path_exists(job.transcript_path):
+        update_step_progress(
+            db,
+            job,
+            "downloading",
+            progress_message="Buscando legenda disponível no YouTube",
+            details={"source_value": job.source_value},
+        )
+        try:
+            subtitle_path = download_youtube_subtitle(job.source_value, job.id)
+            if subtitle_path:
+                update_step_progress(
+                    db,
+                    job,
+                    "downloading",
+                    progress_message="Convertendo legenda para formato de transcrição",
+                    details={"subtitle_path": subtitle_path},
+                )
+                subtitle_transcript_path = parse_subtitle_to_transcript(subtitle_path, job.id)
+                job.transcript_path = subtitle_transcript_path
+                db.commit()
+                logger.info(
+                    "Legenda do YouTube usada como transcrição: job_id=%s transcript_path=%s",
+                    job.id,
+                    job.transcript_path,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao baixar/converter legenda do YouTube (job_id=%s): %s — continuando com Whisper",
+                job.id,
+                exc,
+            )
+            job.transcript_path = None
+            db.commit()
+
     mark_step_completed(
         db,
         job,
         "downloading",
-        details={"video_path": job.video_path, "title": job.title},
+        details={
+            "video_path": job.video_path,
+            "title": job.title,
+            "subtitle_path": subtitle_path,
+            "transcript_from_subtitle": bool(subtitle_transcript_path),
+        },
     )
 
 
 def _run_extract_audio_step(db: Session, job: Job, *, force: bool = False) -> None:
+    # Se já temos transcrição (ex: legenda do YouTube), pula extração de áudio
+    if _path_exists(job.transcript_path):
+        mark_step_skipped(
+            db,
+            job,
+            "extracting_audio",
+            details={
+                "reason": "youtube_subtitle_used",
+                "transcript_path": job.transcript_path,
+            },
+        )
+        return
+
     if _path_exists(job.audio_path):
         mark_step_skipped(
             db,
@@ -849,6 +919,7 @@ def _run_analyze_step(
             progress_percent=52,
         )
         def _candidate_progress(message: str, percent: int | float | None = None) -> None:
+            _ensure_not_canceled(db, job, "analyzing")
             update_step_progress(
                 db,
                 job,
@@ -1117,6 +1188,7 @@ def process_job_pipeline(
         _log_pipeline_event("pipeline_job_completed", job.id)
 
     except Exception as e:
+        db.rollback()
         _log_pipeline_event("pipeline_job_failed", job_id, step_name=current_step, error=str(e))
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:

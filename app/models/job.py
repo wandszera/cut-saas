@@ -1,4 +1,5 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.database import Base
@@ -25,8 +26,15 @@ class Job(Base):
     transcript_insights = Column(Text, nullable=True)
 
     error_message = Column(Text, nullable=True)
+    failed_step = Column(String, nullable=True)
+    failed_at = Column(DateTime(timezone=True), nullable=True)
     locked_at = Column(DateTime(timezone=True), nullable=True)
     locked_by = Column(String, nullable=True)
+
+    workspace = relationship("Workspace", back_populates="jobs")
+    candidates = relationship("Candidate", back_populates="job", cascade="all, delete-orphan", lazy="selectin")
+    clips = relationship("Clip", back_populates="job", cascade="all, delete-orphan", lazy="selectin")
+    steps = relationship("JobStep", back_populates="job", cascade="all, delete-orphan", lazy="selectin")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

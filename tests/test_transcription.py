@@ -1,5 +1,7 @@
 import json
+import time
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import mock_open, patch
 
@@ -48,6 +50,29 @@ class FakeFasterModel:
         return iter([FakeFasterSegment(0.0, 2.5, " texto rapido ")]), SimpleNamespace(language="pt")
 
 
+class FakeStorage:
+    def __init__(self, output_path: Path):
+        self.output_path = output_path
+
+    def path_for(self, _key: str) -> Path:
+        return self.output_path
+
+    def sync_path(self, _path: Path) -> None:
+        return None
+
+
+class SlowModel:
+    def transcribe(self, _audio_path: str, *, verbose: bool, fp16: bool) -> dict:
+        time.sleep(0.45)
+        return {
+            "language": "pt",
+            "text": "teste de transcricao",
+            "segments": [
+                {"id": 0, "start": 0.0, "end": 1.0, "text": "teste de transcricao"},
+            ],
+        }
+
+
 def test_transcribe_audio_reuses_cached_whisper_model() -> None:
     fake_model = FakeModel()
     load_calls: list[str] = []
@@ -58,6 +83,7 @@ def test_transcribe_audio_reuses_cached_whisper_model() -> None:
 
     storage = SimpleNamespace(
         path_for=lambda key: f"C:/tmp/{key.split('/')[-1]}",
+        sync_path=lambda path: None,
     )
     progress_messages: list[str] = []
     captured_writes: list[str] = []
@@ -120,7 +146,11 @@ def test_transcribe_audio_can_force_fp32_mode() -> None:
         patch.object(transcription.settings, "transcription_provider", "openai_whisper"),
         patch.object(transcription.settings, "whisper_model", "base"),
         patch.object(transcription.settings, "whisper_precision", "fp32"),
-        patch.object(transcription, "get_storage", return_value=SimpleNamespace(path_for=lambda key: "C:/tmp/job_3.json")),
+        patch.object(
+            transcription,
+            "get_storage",
+            return_value=SimpleNamespace(path_for=lambda key: "C:/tmp/job_3.json", sync_path=lambda path: None),
+        ),
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", file_mock),
         patch.object(transcription, "_get_whisper_model", return_value=fake_model),
@@ -147,7 +177,11 @@ def test_transcribe_audio_uses_faster_whisper_when_selected() -> None:
         patch.object(transcription.settings, "transcription_provider", "faster_whisper"),
         patch.object(transcription.settings, "whisper_model", "base"),
         patch.object(transcription.settings, "whisper_precision", "fp32"),
-        patch.object(transcription, "get_storage", return_value=SimpleNamespace(path_for=lambda key: "C:/tmp/job_4.json")),
+        patch.object(
+            transcription,
+            "get_storage",
+            return_value=SimpleNamespace(path_for=lambda key: "C:/tmp/job_4.json", sync_path=lambda path: None),
+        ),
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open", file_mock),
         patch.object(transcription, "_get_faster_whisper_model", return_value=fake_model),
@@ -164,3 +198,35 @@ def test_transcribe_audio_uses_faster_whisper_when_selected() -> None:
     assert payload["language"] == "pt"
     assert payload["text"] == "texto rapido"
     assert payload["segments"][0]["text"] == "texto rapido"
+
+
+def test_transcribe_audio_repeats_heartbeat_while_model_is_busy() -> None:
+    artifacts_dir = Path("test_tmp")
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = artifacts_dir / "transcription-heartbeat-audio.mp3"
+    output_path = artifacts_dir / "transcription-heartbeat-output.json"
+    audio_path.write_bytes(b"fake audio")
+    progress_messages: list[str] = []
+
+    try:
+        with (
+            patch.object(transcription, "_PROGRESS_HEARTBEAT_INTERVAL_SECONDS", 0.1),
+            patch.object(transcription, "_resolve_transcription_provider", return_value="openai_whisper"),
+            patch.object(transcription, "_resolve_fp16_mode", return_value=False),
+            patch.object(transcription, "_get_whisper_model", return_value=SlowModel()),
+            patch.object(transcription, "get_storage", return_value=FakeStorage(output_path)),
+        ):
+            result_path = transcription.transcribe_audio(
+                str(audio_path),
+                123,
+                progress_callback=progress_messages.append,
+            )
+    finally:
+        if audio_path.exists():
+            audio_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+
+    assert result_path == str(output_path)
+    assert progress_messages.count("Executando transcricao do audio") >= 2
+    assert "Transcricao finalizada" in progress_messages

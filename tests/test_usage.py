@@ -45,9 +45,11 @@ class UsageTestCase(unittest.TestCase):
         self.original_base_dir = storage.settings.base_data_dir
         self.base_dir = self.test_artifacts_dir / f"files_{uuid4().hex}"
         storage.settings.base_data_dir = str(self.base_dir)
+        storage.get_storage.cache_clear()
 
     def tearDown(self):
         storage.settings.base_data_dir = self.original_base_dir
+        storage.get_storage.cache_clear()
 
     def _create_workspace_job(self, db):
         _user, workspace, _membership = create_user_with_workspace(
