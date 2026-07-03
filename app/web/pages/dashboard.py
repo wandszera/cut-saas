@@ -40,6 +40,7 @@ from app.web.template_utils import build_templates
 from app.utils.media_urls import build_static_url
 from app.utils.timecodes import parse_timecode_to_seconds
 from app.web.pages.helpers import *
+from app.web.pages import helpers
 
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -74,8 +75,8 @@ def dashboard(request: Request, status_filter: str='all', search_query: str='', 
     priority_groups = build_job_priority_groups(db, filtered_jobs)
     publication_board = build_publication_board(db, recent_jobs)
     quota_status = get_workspace_quota_status(db, workspace.id)
-    runtime_readiness = build_runtime_readiness()
-    return templates.TemplateResponse(request, 'dashboard.html', {'recent_jobs': filtered_jobs, 'status_filter': status_filter, 'search_query': search_query, 'dashboard_summary': dashboard_summary, 'pipeline_health': pipeline_health, 'priority_groups': priority_groups, 'publication_board': publication_board, 'quota_status': quota_status, 'runtime_readiness': runtime_readiness, 'flash': {'message': message, 'level': message_level} if message else None, 'now': datetime.now(), 'auto_refresh': False})
+    runtime_readiness = helpers.build_runtime_readiness()
+    return templates.TemplateResponse(request, 'dashboard.html', {'recent_jobs': filtered_jobs, 'status_filter': status_filter, 'search_query': search_query, 'dashboard_summary': dashboard_summary, 'pipeline_health': pipeline_health, 'priority_groups': priority_groups, 'publication_board': publication_board, 'quota_status': quota_status, 'runtime_readiness': runtime_readiness, 'flash': {'message': message, 'level': message_level} if message else None, 'now': datetime.now(), 'auto_refresh': has_active_jobs(recent_jobs)})
 
 
 @router.get('/onboarding')

@@ -1635,6 +1635,12 @@
           <span class="status-badge">{{ job.status }}</span>
         {% endif %}
         </div>
+        {% if auto_refresh_enabled %}
+        <div id="auto-refresh-control" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+          <span id="auto-refresh-indicator" class="badge">Monitoramento automatico ativo</span>
+          <button id="auto-refresh-toggle" type="button" class="ghost-button">Pausar auto-refresh</button>
+        </div>
+        {% endif %}
       </div>
     </div>
 
@@ -1651,37 +1657,29 @@
     {% endif %}
 
     <div class="meta-grid">
-      {% if job.video_path %}
-      <div class="meta-item" id="video-asset-card">
+      <div class="meta-item" id="video-asset-card" {% if not job.video_path %}style="display: none;"{% endif %}>
         <strong>Video original</strong>
-        <a id="video-asset-link" href="{{ build_static_url(job.video_path) }}" target="_blank">Abrir arquivo</a>
+        <a id="video-asset-link" href="{% if job.video_path %}{{ build_static_url(job.video_path) }}{% endif %}" target="_blank">Abrir arquivo</a>
       </div>
-      {% endif %}
 
-      {% if job.audio_path %}
-      <div class="meta-item" id="audio-asset-card">
+      <div class="meta-item" id="audio-asset-card" {% if not job.audio_path %}style="display: none;"{% endif %}>
         <strong>Audio extraido</strong>
-        <a id="audio-asset-link" href="{{ build_static_url(job.audio_path) }}" target="_blank">Abrir arquivo</a>
+        <a id="audio-asset-link" href="{% if job.audio_path %}{{ build_static_url(job.audio_path) }}{% endif %}" target="_blank">Abrir arquivo</a>
       </div>
-      {% endif %}
 
-      {% if job.transcript_path %}
-      <div class="meta-item" id="transcript-asset-card">
+      <div class="meta-item" id="transcript-asset-card" {% if not job.transcript_path %}style="display: none;"{% endif %}>
         <strong>Transcricao</strong>
-        <a id="transcript-asset-link" href="{{ build_static_url(job.transcript_path) }}" target="_blank">Abrir arquivo</a>
+        <a id="transcript-asset-link" href="{% if job.transcript_path %}{{ build_static_url(job.transcript_path) }}{% endif %}" target="_blank">Abrir arquivo</a>
       </div>
-      {% endif %}
     </div>
 
-    {% if job.video_path %}
-    <div class="video-preview" id="original-video-card">
+    <div class="video-preview" id="original-video-card" {% if not job.video_path %}style="display: none;"{% endif %}>
       <h3>Preview do video original</h3>
       <video id="original-video-player" controls preload="metadata">
-        <source src="{{ build_static_url(job.video_path) }}" type="video/mp4">
+        <source src="{% if job.video_path %}{{ build_static_url(job.video_path) }}{% endif %}" type="video/mp4">
         Seu navegador nao suporta video.
       </video>
     </div>
-    {% endif %}
   </div>
 
   <div class="overview-grid">
@@ -2289,12 +2287,7 @@
           <input type="number" min="0" step="0.1" name="start_seconds" id="start_seconds" placeholder="ss" required>
         </div>
         <input type="hidden" name="start" id="start">
-        {% if auto_refresh_enabled %}
-        <div id="auto-refresh-control" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-          <span id="auto-refresh-indicator" class="badge">Monitoramento automatico ativo</span>
-          <button id="auto-refresh-toggle" type="button" class="ghost-button">Pausar auto-refresh</button>
-        </div>
-        {% endif %}
+
       </div>
 
       <div>
