@@ -1,4 +1,5 @@
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     storage_access_key_id: str | None = None
     storage_secret_access_key: str | None = None
     billing_provider: BillingProvider = "mock"
+    public_base_url: str = "http://127.0.0.1:8000"
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_price_starter: str | None = None
@@ -131,6 +133,20 @@ class Settings(BaseSettings):
                 raise ValueError("ALLOWED_HOSTS cannot use wildcard in staging and production")
         if self.environment == "production" and not self.session_cookie_secure:
             raise ValueError("SESSION_COOKIE_SECURE must be true in production")
+        origin = urlsplit(self.public_base_url)
+        if origin.scheme not in {"http", "https"} or not origin.netloc or origin.username or origin.password or origin.query or origin.fragment or origin.path not in {"", "/"}:
+            raise ValueError("PUBLIC_BASE_URL must be an absolute HTTP(S) origin")
+        if self.environment == "production":
+            if origin.scheme != "https":
+                raise ValueError("PUBLIC_BASE_URL must use HTTPS in production")
+            if self.billing_provider != "stripe":
+                raise ValueError("Production billing requires Stripe; mock and Mercado Pago are not production-ready")
+            if self.pipeline_queue_backend != "worker":
+                raise ValueError("PIPELINE_QUEUE_BACKEND must be worker in production")
+        if self.is_deployed_environment and self.billing_provider == "stripe" and not self.stripe_webhook_secret:
+            raise ValueError("STRIPE_WEBHOOK_SECRET is required in deployed environments")
+        if self.is_deployed_environment and self.billing_provider == "mercado_pago":
+            raise ValueError("Mercado Pago is not validated for deployed environments; use Stripe")
         if self.storage_backend in {"s3", "r2"} and not self.storage_bucket:
             raise ValueError("STORAGE_BUCKET is required for s3/r2 storage backends")
         if self.storage_backend in {"s3", "r2"} and not self.storage_access_key_id:

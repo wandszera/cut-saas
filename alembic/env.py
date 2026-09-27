@@ -15,6 +15,8 @@ from app.models.usage_event import UsageEvent
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
+from app.models.subscription import Subscription
+from app.models.billing_event import BillingEvent
 
 
 config = context.config

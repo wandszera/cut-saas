@@ -41,8 +41,7 @@ class TestApiJobs(RoutesTestCase):
             response = self.client.get('/health/ready')
         if response.status_code != 200: print('BODY:', response.text); self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'ready')
-        self.assertTrue(response.json()['ready'])
-        self.assertEqual(response.json()['checks_ok'], 6)
+        self.assertEqual(response.json(), {'status': 'ready'})
 
 
     def test_create_youtube_job_success(self):

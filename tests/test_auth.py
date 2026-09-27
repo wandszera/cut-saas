@@ -137,7 +137,7 @@ class AuthTestCase(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 303)
-        self.assertIn("/billing", response.headers["location"])
+        self.assertIn("/onboarding", response.headers["location"])
         cookie = response.cookies.get("cut_saas_session")
         self.assertIsNotNone(cookie)
         self.assertIsNotNone(parse_session_token(cookie))

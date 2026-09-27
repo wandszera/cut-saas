@@ -44,7 +44,7 @@ body {
     radial-gradient(circle at left center, rgba(198, 255, 0, 0.08), transparent 28%),
     linear-gradient(180deg, #090909 0%, #0f0f0f 100%);
   overflow-x: hidden;
-  cursor: crosshair;
+  cursor: auto;
 }
 
 body::before {
@@ -829,4 +829,9 @@ a:hover {
   .landing-grid {
     grid-template-columns: 1fr;
   }
+}
+
+:focus-visible { outline: 3px solid var(--acid); outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

@@ -56,7 +56,7 @@ def get_render_presets(workspace: Workspace=Depends(require_current_workspace)):
 def get_analysis_calibration(mode: str='short', niche: str | None=None, db: Session=Depends(get_db), workspace: Workspace=Depends(require_current_workspace)):
     normalized_mode = _normalize_mode(mode)
     normalized_niche = (niche or '').strip().lower() or None
-    calibration_profile = build_analysis_calibration_profile(db, mode=normalized_mode, niche=normalized_niche)
+    calibration_profile = build_analysis_calibration_profile(db, mode=normalized_mode, niche=normalized_niche, workspace_id=workspace.id)
     return calibration_profile
 
 

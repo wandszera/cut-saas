@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import json
 import unittest
+from unittest.mock import patch
+import time
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -13,12 +15,15 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.routes_billing import router as billing_router
 from app.db.database import Base, get_db
+from app.models.candidate import Candidate
+from app.models.clip import Clip
+from app.models.job_step import JobStep
 from app.models.job import Job
 from app.models.subscription import Subscription
 from app.models.usage_event import UsageEvent
 from app.services.accounts import create_user_with_workspace
 from app.services.auth import create_session_token
-from app.services.billing import MockBillingAdapter, StripeBillingAdapter, create_checkout_session
+from app.services.billing import CHECKOUT_PENDING_STATUS, MockBillingAdapter, StripeBillingAdapter, create_checkout_session
 from app.services import billing as billing_service
 from app.services.rate_limit import rate_limiter
 from app.web.routes_billing import router as billing_pages_router
@@ -58,6 +63,8 @@ class BillingTestCase(unittest.TestCase):
         Base.metadata.create_all(bind=self.engine)
         rate_limiter.clear()
         self.client.cookies.clear()
+        self.client.cookies.set("cut_saas_csrf", "billing-test-token")
+        self.client.headers.update({"X-CSRF-Token": "billing-test-token"})
         self.user_id, self.workspace_id = self._create_user_workspace()
         self.client.cookies.set("cut_saas_session", create_session_token(self.user_id))
 
@@ -130,6 +137,36 @@ class BillingTestCase(unittest.TestCase):
             self.assertEqual(quota.limit_video_minutes, 60)
         finally:
             db.close()
+
+    def test_checkout_complete_rejects_wrong_workspace(self):
+        other_user_id, other_workspace_id = self._create_user_workspace()
+        db = self.TestingSessionLocal()
+        try:
+            db.add(Subscription(
+                workspace_id=other_workspace_id,
+                provider="mock",
+                provider_checkout_id="mock_other_workspace_checkout",
+                plan_slug="starter",
+                status=CHECKOUT_PENDING_STATUS,
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.post("/api/billing/checkout/mock_other_workspace_checkout/complete")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_checkout_complete_rejects_direct_activation_for_stripe(self):
+        original_provider = billing_service.settings.billing_provider
+        billing_service.settings.billing_provider = "stripe"
+        try:
+            response = self.client.post("/api/billing/checkout/not-a-real-stripe-checkout/complete")
+        finally:
+            billing_service.settings.billing_provider = original_provider
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("confirmacao", response.json()["detail"])
 
     def test_billing_status_includes_quota_cycle_window(self):
         db = self.TestingSessionLocal()
@@ -210,7 +247,7 @@ class BillingTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("1 video de ate 30 minutos sem cartao", response.text)
         self.assertIn("Sem assinatura ativa", response.text)
-        self.assertIn("Voltar para o Free", response.text)
+        self.assertIn("Ativar Free", response.text)
         self.assertIn("teste gratis", response.text)
 
     def test_billing_page_uses_human_status_label_for_checkout_pending(self):
@@ -245,6 +282,7 @@ class BillingTestCase(unittest.TestCase):
         response = self.client.post(
             "/api/billing/webhook",
             json={
+                "id": "evt_checkout",
                 "type": "checkout.session.completed",
                 "data": {
                     "object": {
@@ -267,6 +305,7 @@ class BillingTestCase(unittest.TestCase):
 
         result = adapter.parse_webhook(
             {
+                "id": "evt_checkout",
                 "type": "checkout.session.completed",
                 "data": {
                     "object": {
@@ -538,6 +577,7 @@ class BillingTestCase(unittest.TestCase):
     def test_stripe_adapter_parses_checkout_completed_webhook(self):
         result = StripeBillingAdapter().parse_webhook(
             {
+                "id": "evt_checkout",
                 "type": "checkout.session.completed",
                 "data": {
                     "object": {
@@ -559,7 +599,8 @@ class BillingTestCase(unittest.TestCase):
         self.assertEqual(result.provider_customer_id, "cus_stripe")
         self.assertEqual(result.current_period_end, datetime(2030, 1, 1, tzinfo=UTC))
 
-    def test_webhook_uses_provider_current_period_end_when_available(self):
+    @patch.object(StripeBillingAdapter, "retrieve_subscription", return_value={'id': 'sub_period', 'status': 'active', 'metadata': {'plan_slug': 'starter'}, 'current_period_start': 1890777600, 'current_period_end': 1893456000})
+    def test_webhook_uses_provider_current_period_end_when_available(self, retrieve):
         db = self.TestingSessionLocal()
         try:
             db.add(
@@ -582,7 +623,8 @@ class BillingTestCase(unittest.TestCase):
             subscription = billing_service.apply_billing_webhook(
                 db,
                 {
-                    "type": "checkout.session.completed",
+                    "id": "evt_checkout",
+                "type": "checkout.session.completed",
                     "data": {
                         "object": {
                             "id": "cs_period",
@@ -601,7 +643,8 @@ class BillingTestCase(unittest.TestCase):
 
         self.assertEqual(subscription.current_period_end.replace(tzinfo=UTC), datetime(2030, 1, 1, tzinfo=UTC))
 
-    def test_stripe_subscription_deleted_webhook_matches_existing_subscription_id(self):
+    @patch.object(StripeBillingAdapter, "retrieve_subscription", return_value={'id': 'sub_existing', 'status': 'canceled', 'metadata': {'plan_slug': 'starter'}, 'current_period_start': 1890777600, 'current_period_end': 1893456000})
+    def test_stripe_subscription_deleted_webhook_matches_existing_subscription_id(self, retrieve):
         db = self.TestingSessionLocal()
         try:
             db.add(
@@ -626,6 +669,7 @@ class BillingTestCase(unittest.TestCase):
             subscription = billing_service.apply_billing_webhook(
                 db,
                 {
+                    "id": "evt_deleted",
                     "type": "customer.subscription.deleted",
                     "data": {
                         "object": {
@@ -643,7 +687,8 @@ class BillingTestCase(unittest.TestCase):
         self.assertEqual(subscription.status, "canceled")
         self.assertEqual(subscription.provider_checkout_id, "cs_original")
 
-    def test_stripe_webhook_route_requires_valid_signature_when_provider_is_stripe(self):
+    @patch.object(StripeBillingAdapter, "retrieve_subscription", return_value={'id': 'sub_signed', 'status': 'active', 'metadata': {'plan_slug': 'starter'}, 'current_period_start': 1890777600, 'current_period_end': 1893456000})
+    def test_stripe_webhook_route_requires_valid_signature_when_provider_is_stripe(self, retrieve):
         db = self.TestingSessionLocal()
         try:
             subscription = Subscription(
@@ -663,7 +708,8 @@ class BillingTestCase(unittest.TestCase):
         billing_service.settings.billing_provider = "stripe"
         billing_service.settings.stripe_webhook_secret = "whsec_test_secret"
         payload = {
-            "type": "checkout.session.completed",
+            "id": "evt_checkout",
+                "type": "checkout.session.completed",
             "data": {
                 "object": {
                     "id": "cs_signed",
@@ -675,7 +721,7 @@ class BillingTestCase(unittest.TestCase):
             },
         }
         raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        timestamp = "1710000000"
+        timestamp = str(int(time.time()))
         signature = hmac.new(
             billing_service.settings.stripe_webhook_secret.encode("utf-8"),
             timestamp.encode("utf-8") + b"." + raw_body,

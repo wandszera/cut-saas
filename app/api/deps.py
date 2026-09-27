@@ -59,6 +59,15 @@ def require_admin_user(current_user: User = Depends(require_current_user)) -> Us
     return current_user
 
 
+def require_workspace_owner(
+    workspace: Workspace = Depends(require_current_workspace),
+    user: User = Depends(require_current_user),
+) -> Workspace:
+    if workspace.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Somente o titular pode alterar a assinatura")
+    return workspace
+
+
 __all__ = [
     "get_db",
     "get_current_user",

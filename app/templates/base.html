@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Transforme podcasts e vídeos longos em cortes com legendas. Revise os trechos sugeridos e exporte para Reels, Shorts e TikTok." />
   <title>{% block title %}Cut SaaS{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -287,10 +288,10 @@
         </div>
 
         <nav class="app-shell-nav" aria-label="Navegacao principal">
-          <div class="app-shell-nav-label">Control center</div>
+          <div class="app-shell-nav-label">Seu estúdio</div>
           <a class="app-shell-nav-link{% if request.url.path in ['/', '/dashboard', '/onboarding'] %} is-active{% endif %}" href="/dashboard">
-            <span>Pipeline e execucao</span>
-            <strong>Dashboard</strong>
+            <span>Vídeos e cortes</span>
+            <strong>Meus vídeos</strong>
           </a>
           {% if app_current_user.is_admin %}
           <a class="app-shell-nav-link{% if request.url.path.startswith('/admin') %} is-active{% endif %}" href="/admin" style="border-color: rgba(198, 255, 0, 0.25); background: rgba(198, 255, 0, 0.04);">
@@ -304,16 +305,18 @@
           </a>
           <a class="app-shell-nav-link{% if request.url.path.startswith('/billing') %} is-active{% endif %}" href="/billing">
             <span>Plano e capacidade</span>
-            <strong>Billing</strong>
+            <strong>Meu plano</strong>
           </a>
           <a class="app-shell-nav-link{% if request.url.path.startswith('/nichos') %} is-active{% endif %}" href="/nichos">
             <span>Editoriais e setups</span>
             <strong>Nichos</strong>
           </a>
+{% if app_current_user.is_admin %}
           <a class="app-shell-nav-link{% if request.url.path.startswith('/system') %} is-active{% endif %}" href="/system">
             <span>Saude operacional</span>
             <strong>Sistema</strong>
           </a>
+{% endif %}
         </nav>
 
         <div class="app-shell-status">
@@ -342,7 +345,7 @@
           </div>
           <div class="app-shell-meta">
             <a class="app-shell-link" href="/account">Perfil</a>
-            <a class="app-shell-link" href="/billing">Billing</a>
+            <a class="app-shell-link" href="/billing">Meu plano</a>
           </div>
         </div>
       </header>

@@ -7,6 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_workspace, require_current_user, require_current_workspace
+from app.api.deps import require_admin_user
+from app.services.plans import list_plans
 from app.db.database import get_db
 from app.models.candidate import Candidate
 from app.models.clip import Clip
@@ -59,7 +61,7 @@ def public_home(request: Request, workspace: Workspace | None=Depends(get_curren
         if query_string:
             dashboard_url = f'{dashboard_url}?{query_string}'
         return RedirectResponse(url=dashboard_url, status_code=303)
-    return templates.TemplateResponse(request, 'index.html', {})
+    return templates.TemplateResponse(request, 'index.html', {'plans': list_plans()})
 
 
 @router.get('/dashboard')
@@ -98,7 +100,7 @@ def niche_admin_page(request: Request, message: str | None=None, level: str | No
 
 
 @router.get('/system')
-def system_status_page(request: Request, user: User=Depends(require_current_user)):
+def system_status_page(request: Request, user: User=Depends(require_admin_user)):
     diagnostics = build_system_diagnostics()
     return templates.TemplateResponse(request, 'system.html', {'diagnostics': diagnostics})
 

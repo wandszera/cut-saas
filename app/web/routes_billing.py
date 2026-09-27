@@ -1,11 +1,14 @@
 from urllib.parse import urlencode
+import httpx
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
 from starlette.requests import Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_current_workspace
+from app.api.deps import require_current_workspace, require_workspace_owner
+from app.core.config import settings
+from app.models.subscription import Subscription
 from app.db.database import get_db
 from app.models.workspace import Workspace
 from app.services.billing import (
@@ -13,6 +16,7 @@ from app.services.billing import (
     build_billing_overview,
     cancel_current_subscription,
     create_checkout_session,
+    create_customer_portal,
 )
 from app.services.rate_limit import BILLING_MUTATION_RULE, enforce_rate_limit
 from app.web.security import validate_csrf_request
@@ -61,33 +65,45 @@ def start_checkout_from_page(
     request: Request,
     plan: str = Form(...),
     db: Session = Depends(get_db),
-    workspace: Workspace = Depends(require_current_workspace),
+    workspace: Workspace = Depends(require_workspace_owner),
 ):
     enforce_rate_limit(request, BILLING_MUTATION_RULE, suffix=f"{workspace.id}:checkout")
     try:
         session = create_checkout_session(db, workspace_id=workspace.id, plan_slug=plan)
     except ValueError as exc:
+        db.rollback()
         return RedirectResponse(url=_billing_url(str(exc), "warning"), status_code=303)
+    except httpx.HTTPError:
+        db.rollback()
+        return RedirectResponse(url=_billing_url("Pagamento temporariamente indisponivel. Tente novamente.", "warning"), status_code=303)
     return RedirectResponse(url=session.checkout_url, status_code=303)
 
 
 @router.get("/billing/checkout/complete")
 def complete_checkout_from_page(
+    request: Request,
     session_id: str,
     success_url: str = "/billing",
     cancel_url: str = "/billing",
     db: Session = Depends(get_db),
-    _workspace: Workspace = Depends(require_current_workspace),
+    _workspace: Workspace = Depends(require_workspace_owner),
 ):
+    if settings.billing_provider != "mock" or settings.is_deployed_environment:
+        raise HTTPException(status_code=404, detail="Checkout simulado indisponivel")
+    subscription = db.query(Subscription).filter_by(provider_checkout_id=session_id, workspace_id=_workspace.id, provider="mock").first()
+    if not subscription:
+        raise HTTPException(status_code=404, detail="Checkout nao encontrado")
+    return templates.TemplateResponse(request, "mock_checkout.html", {"session_id": session_id})
+
+
+@router.post("/billing/checkout/complete")
+def activate_mock_checkout(session_id: str = Form(...), db: Session = Depends(get_db), workspace: Workspace = Depends(require_workspace_owner)):
     try:
-        activate_checkout_session(db, session_id)
+        activate_checkout_session(db, session_id, workspace_id=workspace.id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if not success_url.startswith("/") or success_url.startswith("//"):
-        success_url = "/billing"
-    separator = "&" if "?" in success_url else "?"
     return RedirectResponse(
-        url=f"{success_url}{separator}{urlencode({'message': 'Assinatura ativada.', 'level': 'success'})}",
+        url=_billing_url("Assinatura simulada ativada."),
         status_code=303,
     )
 
@@ -96,14 +112,27 @@ def complete_checkout_from_page(
 def cancel_subscription_from_page(
     request: Request,
     db: Session = Depends(get_db),
-    workspace: Workspace = Depends(require_current_workspace),
+    workspace: Workspace = Depends(require_workspace_owner),
 ):
     enforce_rate_limit(request, BILLING_MUTATION_RULE, suffix=f"{workspace.id}:cancel")
     try:
         cancel_current_subscription(db, workspace.id)
     except ValueError as exc:
         return RedirectResponse(url=_billing_url(str(exc), "warning"), status_code=303)
+    except httpx.HTTPError:
+        return RedirectResponse(url=_billing_url("Nao foi possivel cancelar. Tente novamente.", "warning"), status_code=303)
     return RedirectResponse(
         url=_billing_url("Assinatura cancelada. O workspace voltou para o plano Free.", "success"),
         status_code=303,
     )
+
+
+@router.post("/billing/portal")
+def portal_from_page(request: Request, db: Session = Depends(get_db), workspace: Workspace = Depends(require_workspace_owner)):
+    enforce_rate_limit(request, BILLING_MUTATION_RULE, suffix=f"{workspace.id}:portal")
+    try:
+        return RedirectResponse(create_customer_portal(db, workspace.id), status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(_billing_url(str(exc), "warning"), status_code=303)
+    except httpx.HTTPError:
+        return RedirectResponse(_billing_url("Portal temporariamente indisponivel. Tente novamente.", "warning"), status_code=303)

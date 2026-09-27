@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -74,14 +75,14 @@ def _detect_database() -> dict[str, Any]:
             "name": "Banco",
             "ok": True,
             "status": "ok",
-            "detail": settings.database_url,
+            "detail": make_url(settings.database_url).render_as_string(hide_password=True),
         }
     except SQLAlchemyError as exc:
         return {
             "name": "Banco",
             "ok": False,
             "status": "erro",
-            "detail": str(exc),
+            "detail": "Falha na conexao com o banco de dados",
         }
 
 
@@ -263,7 +264,7 @@ def _detect_deployment_readiness() -> dict[str, Any]:
         _build_readiness_item(
             name="Database",
             ok=settings.is_deployed_environment and settings.database_url_for_engine.startswith("postgresql+psycopg://"),
-            detail=settings.database_url_for_engine,
+            detail=make_url(settings.database_url_for_engine).render_as_string(hide_password=True),
         ),
         _build_readiness_item(
             name="Alembic",
@@ -361,7 +362,7 @@ def build_system_diagnostics() -> dict[str, Any]:
         "directories": directories,
         "settings_snapshot": {
             "environment": settings.environment,
-            "database_url": settings.database_url,
+            "database_url": make_url(settings.database_url).render_as_string(hide_password=True),
             "base_data_dir": settings.base_data_dir,
             "storage_backend": settings.storage_backend,
             "billing_provider": settings.billing_provider,

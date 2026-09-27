@@ -3,10 +3,11 @@ from datetime import datetime, UTC, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.models.subscription import Subscription
 from app.models.usage_event import UsageEvent
-from app.services.plans import ACTIVE_SUBSCRIPTION_STATUSES, Plan, get_workspace_plan
+from app.services.plans import ACTIVE_SUBSCRIPTION_STATUSES, Plan, get_workspace_plan, select_current_subscription, subscription_has_access
 
 
 @dataclass(frozen=True)
@@ -53,18 +54,16 @@ def _month_start(now: datetime | None = None) -> datetime:
 
 
 def _active_subscription_period(db: Session, workspace_id: int) -> tuple[datetime, datetime] | None:
-    subscription = (
-        db.query(Subscription)
-        .filter(Subscription.workspace_id == workspace_id)
-        .order_by(Subscription.updated_at.desc(), Subscription.id.desc())
-        .first()
-    )
-    if not subscription or subscription.status not in ACTIVE_SUBSCRIPTION_STATUSES or not subscription.current_period_end:
+    subscription = select_current_subscription(db, workspace_id)
+    if not subscription_has_access(subscription) or not subscription.current_period_end:
         return None
     period_end = subscription.current_period_end
     if period_end.tzinfo is None:
         period_end = period_end.replace(tzinfo=UTC)
-    return period_end - timedelta(days=30), period_end
+    period_start = subscription.current_period_start or period_end - timedelta(days=30)
+    if period_start.tzinfo is None:
+        period_start = period_start.replace(tzinfo=UTC)
+    return period_start, period_end
 
 
 def get_workspace_quota_status(db: Session, workspace_id: int) -> QuotaStatus:
@@ -78,8 +77,7 @@ def get_workspace_quota_status(db: Session, workspace_id: int) -> QuotaStatus:
     ]
     if period_end is not None:
         filters.append(UsageEvent.created_at < period_end)
-    used = db.query(UsageEvent).filter(*filters).all()
-    used_minutes = sum(float(event.quantity or 0) for event in used)
+    used_minutes = float(db.query(func.coalesce(func.sum(UsageEvent.quantity), 0)).filter(*filters).scalar())
     return QuotaStatus(
         workspace_id=workspace_id,
         plan=plan,

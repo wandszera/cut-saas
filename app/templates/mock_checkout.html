@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Simulação de assinatura — ClipForge{% endblock %}
+{% block content %}
+<main class="shell"><section class="surface">
+  <h1>Simulação de assinatura</h1>
+  <p>Ambiente de desenvolvimento. Nenhum pagamento será realizado.</p>
+  <form method="post" action="/billing/checkout/complete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="session_id" value="{{ session_id }}" />
+    <button type="submit">Confirmar simulação</button>
+  </form>
+  <a href="/billing">Voltar aos planos</a>
+</section></main>
+{% endblock %}

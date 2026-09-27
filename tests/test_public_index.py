@@ -18,10 +18,10 @@ class PublicIndexTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("ClipForge", response.text)
-        self.assertIn("DESTRUA", response.text)
-        self.assertIn("Gerar meus clips agora", response.text)
+        self.assertIn("UMA CONVERSA.", response.text)
+        self.assertIn("Criar meu primeiro corte", response.text)
         self.assertIn("Como funciona", response.text)
-        self.assertIn("SEM ENROLACAO", response.text)
+        self.assertIn("Um plano para cada ritmo.", response.text)
         self.assertNotIn("/jobs/dashboard/monitor", response.text)
         self.assertNotIn("/web/jobs/create", response.text)
         self.assertNotIn("Status do sistema", response.text)

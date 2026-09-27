@@ -114,7 +114,7 @@ def register(
             url=_auth_url("/register", str(exc), "error"),
             status_code=303,
         )
-    response = RedirectResponse(url=_billing_activation_url(), status_code=303)
+    response = RedirectResponse(url="/onboarding", status_code=303)
     attach_session_cookie(response, user.id)
     return response
 

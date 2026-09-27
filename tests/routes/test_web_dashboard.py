@@ -14,6 +14,7 @@ from app.models.job import Job
 from app.models.niche_definition import NicheDefinition
 from app.models.job_step import JobStep
 from app.models.subscription import Subscription
+from app.models.user import User
 from app.services.accounts import create_user_with_workspace
 from app.services.auth import create_session_token
 from app.services.llm_provider import LLMRateLimitError
@@ -33,6 +34,12 @@ class TestWebDashboard(RoutesTestCase):
 
 
     def test_system_status_page_renders_diagnostics(self):
+        db = self._session()
+        try:
+            db.get(User, self.user_id).is_admin = True
+            db.commit()
+        finally:
+            db.close()
         response = self.client.get('/system')
         self.assertEqual(response.status_code, 200)
         self.assertIn('Diagnóstico Operacional', response.text)
@@ -209,6 +216,10 @@ class TestWebDashboard(RoutesTestCase):
 
 
     def test_system_page_includes_runtime_readiness_section(self):
+        from app.models.user import User
+        with self._session() as db:
+            db.get(User, self.user_id).is_admin = True
+            db.commit()
         response = self.client.get('/system')
         self.assertEqual(response.status_code, 200)
         self.assertIn('Prontidao operacional', response.text)

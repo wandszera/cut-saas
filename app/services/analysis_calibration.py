@@ -82,6 +82,7 @@ def build_analysis_calibration_profile(
     *,
     mode: str = "short",
     niche: str | None = None,
+    workspace_id: int | None = None,
 ) -> dict:
     normalized_mode = (mode or "short").strip().lower()
     normalized_niche = (niche or "").strip().lower()

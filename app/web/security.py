@@ -32,7 +32,7 @@ def attach_csrf_cookie(response: Response, token: str) -> None:
 async def validate_csrf_request(request: Request) -> None:
     if request.method.upper() in CSRF_SAFE_METHODS:
         return
-    if request.url.path.startswith("/api/") or (request.url.path.startswith("/jobs/") and "/view" not in request.url.path):
+    if (request.url.path.startswith("/api/") and not request.url.path.startswith("/api/billing/")) or (request.url.path.startswith("/jobs/") and "/view" not in request.url.path):
         return
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
     if not cookie_token:
@@ -56,7 +56,7 @@ def build_content_security_policy() -> str:
             "base-uri 'self'",
             "object-src 'none'",
             "frame-ancestors 'none'",
-            "form-action 'self'",
+            "form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
             "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com data:",
@@ -73,6 +73,8 @@ def apply_security_headers(request: Request, response: Response) -> None:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if getattr(request.state, "current_user", None) is not None:
+        response.headers["Cache-Control"] = "private, no-store"
     if settings.is_deployed_environment:
         forwarded_proto = request.headers.get("x-forwarded-proto", "")
         is_secure_request = request.url.scheme == "https" or forwarded_proto.lower() == "https"

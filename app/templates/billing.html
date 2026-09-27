@@ -1,193 +1,33 @@
 {% extends "base.html" %}
-
-{% block title %}Billing - Cut SaaS{% endblock %}
-
-{% block head %}
-  <link rel="stylesheet" href="/assets/styles/pages/dashboard.css" />
-{% endblock %}
-
+{% block title %}Meu plano — ClipForge{% endblock %}
+{% block head %}<link rel="stylesheet" href="/assets/styles/pages/product.css" />{% endblock %}
 {% block content %}
-  <main class="shell">
-    {% if flash %}
-      <section class="dashboard-alert dashboard-alert-{{ flash.level }}">
-        {{ flash.message }}
-      </section>
-    {% endif %}
-
-    <section class="hero billing-hero">
-      <div class="hero-panel">
-        <div class="eyebrow">Billing</div>
-        <h1 class="hero-title">
-          Receita, capacidade e previsibilidade no mesmo painel.
-          <span>Assinatura, consumo mensal e espaco de crescimento do workspace em uma visao mais clara para operacao real.</span>
-        </h1>
-        <p class="hero-copy">
-          O billing deixa de ser apenas uma tela de cobranca e vira um controle de capacidade: quanto ja foi consumido, quanto ainda cabe no ciclo e quando vale mudar de plano.
-          {% if billing_activation_required %}
-            O workspace pode testar 1 video de ate 30 minutos sem cartao. Depois do teste, cadastre um cartao valido para continuar usando a plataforma.
-          {% endif %}
-        </p>
-        <div class="hero-metrics">
-          <div class="metric">
-            <strong>{{ subscription.plan|upper }}</strong>
-            <span>Plano atual</span>
-          </div>
-          <div class="metric">
-            <strong>{{ subscription.status_label }}</strong>
-            <span>Status</span>
-          </div>
-          <div class="metric">
-            <strong>{{ "%.1f"|format(quota_status.used_video_minutes) }}/{{ "%.0f"|format(quota_status.limit_video_minutes) }}</strong>
-            <span>minutos usados</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="hero-side billing-hero-side">
-        <section class="surface billing-cycle-card">
-          <h3>Leitura do ciclo</h3>
-          <p>
-            {% if billing_activation_required %}
-              O teste gratis cobre 1 video de ate 30 minutos. Depois disso, o billing entra para liberar novos processamentos.
-            {% else %}
-              Restam {{ "%.1f"|format(quota_status.remaining_video_minutes) }} minutos neste ciclo.
-            {% if quota_status.is_exceeded %}
-              Novos processamentos estao bloqueados ate renovar o ciclo ou trocar de plano.
-            {% elif quota_status.is_near_limit %}
-              O workspace esta perto do limite mensal.
-            {% else %}
-              O workspace ainda tem margem para novos processamentos.
-            {% endif %}
-            {% endif %}
-          </p>
-          {% if billing_activation_required %}
-            <p>Quando voce decidir continuar, o cartao entra para liberar novos videos e planos pagos.</p>
-          {% elif quota_status.period_end %}
-            <p>O ciclo atual vai ate {{ quota_status.period_end[:10] }}.</p>
-          {% else %}
-            <p>O limite segue o mes calendario atual.</p>
-          {% endif %}
-        </section>
-      </div>
-    </section>
-
-    <section class="surface billing-plans-surface">
-      <div class="section-title">
-        <div>
-          <h2>Planos</h2>
-          <p>Escolha o limite mensal que acompanha a carga da sua operacao sem criar gargalo nas entregas.</p>
-          <p>Provider de billing: {{ billing_provider }}{% if not billing_provider_ready %} (pendente de adapter real){% endif %}</p>
-        </div>
-      </div>
-
-      <div class="ops-grid billing-plans-grid">
-        {% for plan in plans %}
-          <article class="board-card billing-plan-card{% if plan.slug == subscription.plan and subscription.status in ['active', 'trialing'] %} active-plan{% endif %}">
-            <h3>{{ plan.name }}</h3>
-            <div class="board-item">
-              <strong>Capacidade mensal</strong>
-              <p>{{ "%.0f"|format(plan.monthly_video_minutes) }} min/mês</p>
-            </div>
-            <div class="board-item">
-              <strong>Investimento</strong>
-              <p>
-              {% if plan.monthly_price_cents %}
-                R$ {{ "%.2f"|format(plan.monthly_price_cents / 100) }}/mês
-              {% else %}
-                Grátis
-              {% endif %}
-              </p>
-            </div>
-            <div class="board-item">
-              <strong>Armazenamento privado</strong>
-              <p>{{ (plan.storage_limit_bytes / 1024 / 1024 / 1024)|int }} GB</p>
-            </div>
-            <div class="board-item">
-              <strong>Workspaces inclusos</strong>
-              <p>{{ plan.max_workspaces }}</p>
-            </div>
-            <div class="board-item">
-              <strong>Enriquecimento por LLM</strong>
-              <p>{% if plan.llm_enabled %}Disponível{% else %}Não disponível{% endif %}</p>
-            </div>
-            <div class="board-item">
-              <strong>Fila de processamento</strong>
-              <p>{% if plan.priority_queue %}Fila Prioritária{% else %}Fila Comum{% endif %}</p>
-            </div>
-            <div class="board-item">
-              <strong>Melhor encaixe</strong>
-              <p>
-                {% if plan.slug == "free" %}
-                  Teste inicial rápido antes de ativar o faturamento comercial.
-                {% elif plan.slug == "starter" %}
-                  Operação enxuta com publicação recorrente e enriquecimento básico.
-                {% elif plan.slug == "pro" %}
-                  Volume editorial contínuo, fila prioritária e máximo espaço.
-                {% else %}
-                  Workspace com demanda alta e time em escala.
-                {% endif %}
-              </p>
-            </div>
-            {% if plan.slug == subscription.plan and subscription.status in ["active", "trialing"] %}
-              <div class="board-item">
-                <strong>Status</strong>
-                <p>Plano atual em operação.</p>
-              </div>
-            {% else %}
-              <form method="post" action="/billing/checkout" style="margin-top: 14px;">
-                <input type="hidden" name="plan" value="{{ plan.slug }}" />
-                <button type="submit">
-                  {% if plan.slug == "free" %}
-                    Voltar para o Free
-                  {% else %}
-                    Assinar {{ plan.name }}
-                  {% endif %}
-                </button>
-              </form>
-            {% endif %}
-          </article>
-        {% endfor %}
-      </div>
-      {% if subscription.status in ["active", "trialing", "past_due"] %}
-        <form method="post" action="/billing/cancel" style="margin-top: 18px;">
-          <button type="submit">Cancelar assinatura</button>
-        </form>
-      {% endif %}
-    </section>
-
-    <section class="surface billing-upgrade-surface">
-      <div class="section-title">
-        <div>
-          <h2>Momento de upgrade</h2>
-          <p>Uma leitura rapida para decidir se vale subir de plano agora ou operar com folga no ciclo atual.</p>
-        </div>
-      </div>
-
-      <div class="ops-grid billing-upgrade-grid">
-        <article class="ops-card billing-upgrade-card">
-          <strong>Uso atual</strong>
-          <p>{{ "%.1f"|format(quota_status.used_video_minutes) }} minutos ja passaram pelo workspace neste ciclo.</p>
-          <span>{{ "%.0f"|format((quota_status.used_video_minutes / quota_status.limit_video_minutes * 100) if quota_status.limit_video_minutes else 0) }}% da capacidade</span>
-        </article>
-        <article class="ops-card billing-upgrade-card">
-          <strong>Espaco restante</strong>
-          <p>{{ "%.1f"|format(quota_status.remaining_video_minutes) }} minutos ainda podem ser processados antes do limite.</p>
-          <span>{% if quota_status.is_exceeded %}limite estourado{% elif quota_status.is_near_limit %}zona de atencao{% else %}margem saudavel{% endif %}</span>
-        </article>
-        <article class="ops-card billing-upgrade-card">
-          <strong>Recomendacao</strong>
-          <p>
-            {% if quota_status.is_exceeded %}
-              O workspace pede upgrade imediato para nao travar novas entregas.
-            {% elif quota_status.is_near_limit %}
-              Vale subir de plano antes do proximo pico de producao.
-            {% else %}
-              O plano atual ainda acompanha bem a operacao.
-            {% endif %}
-          </p>
-          <span>decisao comercial</span>
-        </article>
-      </div>
-    </section>
-  </main>
+<main class="product-container onboarding-product">
+  {% if flash %}<div class="flash flash-{{ flash.level }}" role="status">{{ flash.message }}</div>{% endif %}
+  <p class="product-eyebrow">SUA ROTINA DE CRIAÇÃO</p><h1>Meu plano.</h1>
+  <p class="product-lead">Acompanhe seus minutos e escolha espaço para os próximos episódios.</p>
+  {% if billing_provider == 'mock' %}<div class="onboarding-notice">Modo de demonstração: nenhum pagamento real será realizado.</div>{% endif %}
+  {% if billing_activation_required %}<div class="onboarding-notice">Comece com 1 video de ate 30 minutos sem cartao. Seu teste gratis está disponível antes da ativação. <a href="/onboarding">Enviar primeiro vídeo ↗</a></div>{% endif %}
+  <div class="product-grid steps-grid">
+    <article><p class="product-eyebrow">PLANO ATUAL</p><h3>{{ quota_status.plan_name }}</h3><p>{{ subscription.status_label }}</p></article>
+    <article><p class="product-eyebrow">MINUTOS UTILIZADOS</p><h3>{{ "%.1f"|format(quota_status.used_video_minutes) }}/{{ quota_status.limit_video_minutes|int }}</h3><p>{{ "%.1f"|format(quota_status.remaining_video_minutes) }} minutos restantes.</p></article>
+    <article><p class="product-eyebrow">SEU CICLO</p>{% if quota_status.period_end %}<p>O ciclo atual vai ate {{ quota_status.period_end[:10] }}.</p>{% else %}<p>O limite do Free segue o mês calendário.</p>{% endif %}<p>Os minutos consideram a duração do vídeo original.</p></article>
+  </div>
+  {% if subscription.provider == 'stripe' and subscription.provider_customer_id %}
+  <section class="onboarding-notice"><p>Atualize o cartão, consulte faturas, troque de plano ou solicite o cancelamento no portal de pagamento.</p><form method="post" action="/billing/portal"><input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><button class="product-button" type="submit">Gerenciar assinatura ↗</button></form></section>
+  {% endif %}
+  {% if subscription.status == 'checkout_pending' and subscription.checkout_url %}<div class="onboarding-notice">Você tem um checkout em andamento. <a href="{{ subscription.checkout_url }}">Continuar assinatura ↗</a></div>{% endif %}
+  <section class="product-section"><h2>Seu próximo ritmo.</h2><p class="product-lead">Após o teste, o Free oferece 60 minutos mensais com cadastro de cartão. Os planos pagos aumentam sua capacidade.</p>
+    <div class="product-grid plan-grid">{% for plan in plans %}<article class="product-plan{% if plan.slug == 'starter' %} featured{% endif %}">
+      <h3>{{ plan.name }}</h3><div class="plan-price">R$ {{ ("%.2f"|format(plan.monthly_price_cents / 100)).replace('.', ',') }}<small>/mês</small></div>
+      <ul><li>{{ plan.monthly_video_minutes|int }} minutos de vídeo/mês</li><li>{{ (plan.storage_limit_bytes / 1073741824)|int }} GB de armazenamento</li><li>Revisão de cortes e legendas</li><li>Download dos arquivos</li></ul>
+      {% if plan.slug == quota_status.plan and not billing_activation_required %}<p class="product-note">Seu plano atual.</p>
+      {% elif subscription.provider == 'stripe' and subscription.provider_customer_id and subscription.status != 'checkout_pending' %}<form method="post" action="/billing/portal"><input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><button class="product-button outline" type="submit">Alterar no portal ↗</button></form>
+      {% elif subscription.status in ['active', 'trialing', 'past_due', 'checkout_pending'] and subscription.plan != 'free' %}<p class="product-note">Gerencie sua assinatura atual antes de iniciar outra.</p>
+      {% else %}<form method="post" action="/billing/checkout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><input type="hidden" name="plan" value="{{ plan.slug }}" /><button class="product-button" type="submit">{% if plan.slug == 'free' %}Ativar Free{% else %}Assinar {{ plan.name }}{% endif %} ↗</button></form>{% endif %}
+      {% if plan.slug == 'free' %}<p class="product-note">Sem mensalidade. Cartão necessário para continuar após o teste.</p>{% endif %}
+    </article>{% endfor %}</div>
+  </section>
+  {% if subscription.provider == 'mock' and subscription.status in ['active', 'trialing', 'past_due'] %}<form method="post" action="/billing/cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token }}" /><button class="product-button outline" type="submit">Cancelar assinatura simulada</button></form>{% endif %}
+</main>
 {% endblock %}

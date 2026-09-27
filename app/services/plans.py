@@ -64,29 +64,31 @@ def get_plan(plan_slug: str | None) -> Plan:
     return PLANS.get((plan_slug or "free").strip().lower(), PLANS["free"])
 
 
+def subscription_has_access(subscription: Subscription | None) -> bool:
+    if not subscription or subscription.status not in ACTIVE_SUBSCRIPTION_STATUSES:
+        return False
+    if subscription.current_period_end:
+        end = subscription.current_period_end
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=UTC)
+        return end > datetime.now(UTC)
+    return subscription.plan_slug == "free" or subscription.provider == "mock"
+
+
+def select_current_subscription(db: Session, workspace_id: int) -> Subscription | None:
+    subscriptions = db.query(Subscription).filter(
+        Subscription.workspace_id == workspace_id
+    ).order_by(Subscription.id.desc()).all()
+    # A new abandoned checkout must never displace a customer's paid access.
+    for subscription in subscriptions:
+        if subscription.plan_slug != "free" and subscription_has_access(subscription):
+            return subscription
+    return subscriptions[0] if subscriptions else None
+
+
 def get_workspace_plan(db: Session | None = None, workspace_id: int | None = None) -> Plan:
     if db is not None and workspace_id is not None:
-        subscription = (
-            db.query(Subscription)
-            .filter(Subscription.workspace_id == workspace_id)
-            .order_by(Subscription.updated_at.desc(), Subscription.id.desc())
-            .first()
-        )
-        if subscription and subscription.status in ACTIVE_SUBSCRIPTION_STATUSES:
-            # Lógica de expiração de trial e datas recorrentes
-            if subscription.current_period_end:
-                period_end = subscription.current_period_end
-                # Tornar a comparação segura com ou sem timezone
-                now = datetime.now(UTC)
-                if period_end.tzinfo is None:
-                    now = now.replace(tzinfo=None)
-                
-                if period_end < now:
-                    # Expirou! Atualizamos o status e persistimos
-                    subscription.status = "canceled"
-                    db.commit()
-                    db.refresh(subscription)
-                    return PLANS["free"]
-            
+        subscription = select_current_subscription(db, workspace_id)
+        if subscription_has_access(subscription):
             return get_plan(subscription.plan_slug)
     return PLANS["free"]

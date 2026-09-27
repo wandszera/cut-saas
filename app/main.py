@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -132,7 +133,7 @@ def health_live():
 @app.get("/health/ready")
 def health_ready():
     readiness = build_runtime_readiness()
-    return {
-        "status": "ready" if readiness["ready"] else "not_ready",
-        **readiness,
-    }
+    return JSONResponse(
+        {"status": "ready" if readiness["ready"] else "not_ready"},
+        status_code=200 if readiness["ready"] else 503,
+    )

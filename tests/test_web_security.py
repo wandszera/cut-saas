@@ -132,7 +132,7 @@ class WebSecurityTestCase(unittest.TestCase):
 
         self.assertEqual(rejected.status_code, 403)
         self.assertEqual(accepted.status_code, 303)
-        self.assertIn("/billing", accepted.headers["location"])
+        self.assertIn("/onboarding", accepted.headers["location"])
 
     def test_billing_cancel_rejects_post_without_csrf_token(self):
         self.client.cookies.set("cut_saas_session", create_session_token(self.user_id))

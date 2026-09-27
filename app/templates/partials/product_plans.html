@@ -1,0 +1,12 @@
+<div class="product-grid plan-grid">
+{% for plan in plans %}
+<article class="product-plan{% if plan.slug == 'starter' %} featured{% endif %}">
+  <div class="plan-heading"><h3>{{ plan.name }}</h3>{% if plan.slug == 'starter' %}<span>PARA QUEM PUBLICA TODA SEMANA</span>{% endif %}</div>
+  <p class="plan-description">{% if plan.slug == 'free' %}Para conhecer o seu fluxo de cortes.{% elif plan.slug == 'starter' %}Para transformar episódios em uma rotina.{% else %}Para quem tem mais conversas para compartilhar.{% endif %}</p>
+  <div class="plan-price">R$ {{ ("%.2f"|format(plan.monthly_price_cents / 100)).replace('.', ',') }}<small>/mês</small></div>
+  <ul><li><strong>{{ plan.monthly_video_minutes|int }} minutos</strong> de vídeo original/mês</li><li>{{ (plan.storage_limit_bytes / 1073741824)|int }} GB de armazenamento</li><li>Seleção e revisão de trechos</li><li>Cortes com legendas e download</li></ul>
+  <a class="product-button{% if plan.slug != 'starter' %} outline{% endif %}" href="{% if app_current_user %}/billing{% else %}/register{% endif %}">{% if app_current_user %}Gerenciar meu plano{% else %}Começar com um teste{% endif %} ↗</a>
+  <p class="product-note">{% if plan.slug == 'free' %}Teste sem cartão. Cartão necessário para continuar no Free.{% else %}Assinatura mensal. Sem vídeos ilimitados.{% endif %}</p>
+</article>
+{% endfor %}
+</div>

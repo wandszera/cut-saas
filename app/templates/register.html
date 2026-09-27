@@ -8,10 +8,10 @@
     <section class="auth-stage">
       <div class="auth-stage-copy">
         <a class="auth-brand" href="/">Clip<span>Forge</span></a>
-        <div class="auth-stage-kicker" style="margin-top: 1.4rem;">Criar workspace</div>
-        <h1>COMECE COM UMA BASE PRONTA PARA OPERAR.</h1>
+        <div class="auth-stage-kicker" style="margin-top: 1.4rem;">Seu primeiro corte</div>
+        <h1>SEU PODCAST TEM MAIS HISTÓRIAS PARA CONTAR.</h1>
         <p>
-          Abra sua conta, monte seu workspace e leve ingestao, analise, render e export para um fluxo
+          Transforme suas entrevistas e episódios em cortes com legendas, em um fluxo
           <strong>mais previsivel e mais rapido</strong>.
         </p>
         <div class="auth-stage-metrics">
@@ -35,8 +35,8 @@
           <span>Crie sua conta e teste 1 video de ate 30 minutos antes de cadastrar qualquer cartao.</span>
         </div>
         <div class="auth-stage-card">
-          <strong>Base escalavel</strong>
-          <span>Auth, billing, quotas e storage privado ja entram no jogo desde o primeiro dia.</span>
+          <strong>Você escolhe o que publicar</strong>
+          <span>Revise os trechos sugeridos, ajuste seus cortes e baixe os arquivos.</span>
         </div>
       </div>
     </section>
@@ -57,7 +57,7 @@
           <input type="text" name="display_name" autocomplete="name" />
         </label>
         <label>
-          Workspace
+          Nome do canal ou podcast (opcional)
           <input type="text" name="workspace_name" autocomplete="organization" />
         </label>
         <label>
@@ -68,7 +68,8 @@
           Senha
           <input type="password" name="password" autocomplete="new-password" minlength="8" required />
         </label>
-        <button type="submit">Criar conta</button>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <button type="submit">Criar conta e testar grátis</button>
       </form>
 
       <p class="auth-switch">
