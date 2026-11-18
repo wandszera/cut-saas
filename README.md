@@ -4,7 +4,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Tests](https://img.shields.io/badge/Tests-214_passing-brightgreen?logo=pytest&logoColor=white)](#testing)
+[![CI](https://github.com/wandszera/cut-saas/actions/workflows/ci.yml/badge.svg)](https://github.com/wandszera/cut-saas/actions/workflows/ci.yml)
 [![LLM](https://img.shields.io/badge/LLM-OpenAI_%7C_Ollama-blueviolet?logo=openai&logoColor=white)](#llm-architecture)
 
 ---
@@ -215,7 +215,7 @@ Videos are split into 900-second chunks with 45-second overlap. Each chunk is in
 | **Billing** | Stripe, Mercado Pago, Mock (Protocol-based adapter pattern) |
 | **Monitoring** | Sentry (error tracking + performance tracing) |
 | **Templates** | Jinja2 (server-rendered dashboard with real-time polling) |
-| **Testing** | unittest — 214 tests across 30 test files |
+| **Testing** | unittest — 244 tests across 30 test files |
 
 ---
 
@@ -261,7 +261,7 @@ app/
   utils/           Media URLs, timecodes, environment helpers
   web/             Web routes, security (CSRF, sessions), template helpers
   worker.py        Standalone background worker process
-tests/             214 tests across 30 files
+tests/             244 tests across 30 files
 docs/              Technical roadmap
 alembic/           Database migrations
 scripts/           Utility scripts
@@ -327,7 +327,7 @@ Open `http://127.0.0.1:8000/` for the web interface.
 python -m unittest discover -s tests -v
 ```
 
-**214 tests** covering:
+**244 tests** covering:
 
 | Test Area | Coverage |
 |---|---|
